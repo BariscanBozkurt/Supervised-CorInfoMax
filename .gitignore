@@ -1,0 +1,10 @@
+*.gz
+*.pkl
+*.pkl.gz
+data
+*.log
+CodesFromAlperHoca
+Debug*
+*Debug
+*Debug*
+
