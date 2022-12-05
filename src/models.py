@@ -315,11 +315,12 @@ class TwoLayerCorInfoMax():
         error_yh_free = y_hat - (self.Wff[1]['weight'] @ h + self.Wff[1]['bias'])
         error_hy_free = h - (self.Wfb[1]['weight'] @ y_hat + self.Wfb[1]['bias'])
 
-        # zh_free = torch.mean(B[0]['weight'] @ neurons1[0], 1)
-        # zy_free = torch.mean(B[1]['weight'] @ neurons1[1], 1)
+        zh_free = torch.mean(B[0]['weight'] @ neurons1[0], 1)
+        zy_free = torch.mean(B[1]['weight'] @ neurons1[1], 1)
 
-        # B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_free, zh_free)))
-        # B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_free, zy_free)))
+        B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_free, zh_free)))
+        B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_free, zy_free)))
+        self.B = B
 
         h, y_hat = self.run_neural_dynamics(x, h, y_hat, y_label, neural_lr, 
                                             neural_dynamic_iterations_nudged, beta, output_sparsity, STlambda_lr)
@@ -349,14 +350,14 @@ class TwoLayerCorInfoMax():
         # B[0]['weight'] -= lr['lat'] * (torch.mean(outer_prod_broadcasting(neurons2[0].T, neurons2[0].T), axis = 0) - torch.mean(outer_prod_broadcasting(neurons1[0].T, neurons1[0].T), axis = 0))
         # B[1]['weight'] -= lr['lat'] * (torch.mean(outer_prod_broadcasting(neurons2[1].T, neurons2[1].T), axis = 0) - torch.mean(outer_prod_broadcasting(neurons1[1].T, neurons1[1].T), axis = 0))
 
-        # zh_free = torch.mean(B[0]['weight'] @ neurons1[0], 1)
-        zh_nudged = torch.mean(B[0]['weight'] @ neurons2[0], 1)
-        # zy_free = torch.mean(B[1]['weight'] @ neurons1[1], 1)
-        zy_nudged = torch.mean(B[1]['weight'] @ neurons2[1], 1)
-        # B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_free, zh_free)))
-        # B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_free, zy_free)))
-        B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_nudged, zh_nudged)))
-        B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_nudged, zy_nudged)))
+        # # zh_free = torch.mean(B[0]['weight'] @ neurons1[0], 1)
+        # zh_nudged = torch.mean(B[0]['weight'] @ neurons2[0], 1)
+        # # zy_free = torch.mean(B[1]['weight'] @ neurons1[1], 1)
+        # zy_nudged = torch.mean(B[1]['weight'] @ neurons2[1], 1)
+        # # B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_free, zh_free)))
+        # # B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_free, zy_free)))
+        # B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh_nudged, zh_nudged)))
+        # B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy_nudged, zy_nudged)))
 
         # # B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] + gam_h * (torch.outer(zh_nudged, zh_nudged) - torch.outer(zh_free, zh_free)))
         # # B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] + gam_y * (torch.outer(zy_nudged, zy_nudged) - torch.outer(zy_free, zy_free)))
