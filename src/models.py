@@ -374,6 +374,49 @@ class TwoLayerCorInfoMax():
         
         return h, y_hat
 
+    def batch_step_nofreephase( self, x, y_label, lr, neural_lr, neural_dynamic_iterations_free, 
+                                neural_dynamic_iterations_nudged, beta, output_sparsity = False, STlambda_lr = 0.01):
+        
+        Wff, Wfb, B = self.Wff, self.Wfb, self.B
+        lambda_h, lambda_y = self.lambda_h, self.lambda_y
+        gam_h, gam_y = self.gam_h, self.gam_y
+
+        h, y_hat = self.init_neurons(x.size(1), device = self.device)
+
+        h, y_hat = self.run_neural_dynamics(x, h, y_hat, y_label, neural_lr, 
+                                            neural_dynamic_iterations_free, beta, output_sparsity, STlambda_lr)
+        neurons1 = [h, y_hat].copy()
+
+        error_hx = h - (self.Wff[0]['weight'] @ x + self.Wff[0]['bias'])
+        # error_xh_free = x - (self.Wfb[0]['weight'] @ h + self.Wfb[0]['bias'])
+
+        error_yh = y_hat - (self.Wff[1]['weight'] @ h + self.Wff[1]['bias'])
+        error_hy = h - (self.Wfb[1]['weight'] @ y_hat + self.Wfb[1]['bias'])
+
+        zh = torch.mean(B[0]['weight'] @ neurons1[0], 1)
+        zy = torch.mean(B[1]['weight'] @ neurons1[1], 1)
+
+        B[0]['weight'] = (1 / lambda_h) * (B[0]['weight'] - gam_h * (torch.outer(zh, zh)))
+        B[1]['weight'] = (1 / lambda_y) * (B[1]['weight'] - gam_y * (torch.outer(zy, zy)))
+        self.B = B
+
+        Wff[0]['weight'] += lr['ff'] * torch.mean(outer_prod_broadcasting(error_hx.T, x.T), axis = 0)
+        # Wfb[0]['weight'] -= lr['ff'] * torch.mean(outer_prod_broadcasting(error_xh_free.T, neurons1[0].T) - outer_prod_broadcasting(error_xh_nudged.T, neurons2[0].T), axis = 0)
+        Wff[1]['weight'] += lr['ff'] * torch.mean(outer_prod_broadcasting(error_yh.T, neurons1[0].T), axis = 0)
+        Wfb[1]['weight'] += lr['fb'] * torch.mean(outer_prod_broadcasting(error_hy.T, neurons1[1].T), axis = 0)
+        
+        Wff[0]['bias'] += lr['ff'] * torch.mean(error_hx, axis = 1, keepdims = True)
+        # Wfb[0]['bias'] -= lr['fb'] * torch.mean(error_xh_nudged - error_xh_free, axis = 1, keepdims = True)
+        Wff[1]['bias'] += lr['ff'] * torch.mean(error_yh, axis = 1, keepdims = True)
+        Wfb[1]['bias'] += lr['fb'] * torch.mean(error_hy, axis = 1, keepdims = True)
+        
+        self.Wff = Wff
+        self.Wfb = Wfb
+        self.B = B
+        
+        return h, y_hat
+
+
 class TwoLayerCorInfoMaxThreePhase():
     
     def __init__(self, architecture, lambda_h, lambda_y, epsilon, activation = hard_sigmoid):
