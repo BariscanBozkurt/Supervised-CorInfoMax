@@ -138,4 +138,29 @@ def evaluateCorInfoMax(model, loader, neural_lr, T, device, printing = True):
         print(phase+' accuracy :\t', acc)   
     return acc
 
+def evaluateCorInfoMaxV2(model, loader, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier,
+                         T, device, printing = True):
+    # Evaluate the model on a dataloader with T steps for the dynamics
+    #model.eval()
+    correct=0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        h, y_hat = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        h, y_hat = model.run_neural_dynamics(x, h, y_hat, 0, neural_lr_start = neural_lr_start, neural_lr_stop = neural_lr_stop,
+                                             neural_dynamic_iterations = T, beta = 0, lr_rule = neural_lr_rule, lr_decay_multiplier = neural_lr_decay_multiplier) 
+        
+        pred = torch.argmax(y_hat, dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
 
