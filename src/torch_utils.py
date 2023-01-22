@@ -153,7 +153,8 @@ def evaluateCorInfoMaxV2(model, loader, neural_lr_start, neural_lr_stop, neural_
         
         # dynamics for T time steps
         h, y_hat = model.run_neural_dynamics(x, h, y_hat, 0, neural_lr_start = neural_lr_start, neural_lr_stop = neural_lr_stop,
-                                             neural_dynamic_iterations = T, beta = 0, lr_rule = neural_lr_rule, lr_decay_multiplier = neural_lr_decay_multiplier) 
+                                             neural_dynamic_iterations = T, beta = 0, lr_rule = neural_lr_rule, 
+                                             lr_decay_multiplier = neural_lr_decay_multiplier, mode = "testing") 
         
         pred = torch.argmax(y_hat, dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
         correct += (y == pred).sum().item()
