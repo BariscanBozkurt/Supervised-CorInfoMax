@@ -36,6 +36,45 @@ def torch2numpy(x):
     return x.detach().cpu().numpy()
     
 # Activation functions
+
+def activation_func(x, type_ = "linear"):
+    if type_ == "linear":
+        f_x = x
+        fp_x = torch.ones(*x.shape, device = x.device)
+    elif type_ == "tanh":
+        f_x = torch.tanh(x)
+        fp_x = torch.ones(*x.shape, device = x.device) - f_x ** 2
+    elif type_ == "sigmoid":
+        ones_vec = torch.ones(*x.shape, device = x.device)
+        f_x = 1 / (ones_vec + torch.exp(-x))
+        fp_x = f_x * (ones_vec - f_x)
+    elif type_ == "relu":
+        f_x = torch.maximum(x, torch.tensor([0], device = x.device))
+        fp_x = 1 * (x > 0)
+    elif type_ == "exp":
+        f_x = torch.exp(x)
+        fp_x = f_x
+    else: # Use linear
+        f_x = x
+        fp_x = torch.ones(*x.shape, device = x.device)
+        
+    return f_x, fp_x
+    
+def activation_inverse(x, type_ = "linear"):
+    if type_ == "linear":
+        f_x = x 
+    elif type_ == "tanh":
+        ones_vec = torch.ones(*x.shape, device = x.device)
+        f_x = 0.5 * torch.log((ones_vec + x) / (ones_vec - x))
+    elif type_ == "sigmoid":
+        ones_vec = torch.ones(*x.shape, device = x.device)
+        f_x = torch.log(x / (ones_vec - x))
+    elif type_ == "exp":
+        f_x = torch.log(x)
+    else: # Use linear inverse
+        f_x = x 
+    return x
+
 def my_sigmoid(x):
     return 1/(1+torch.exp(-4*(x-0.5)))
 
