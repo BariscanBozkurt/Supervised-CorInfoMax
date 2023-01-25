@@ -14,6 +14,103 @@ from torch.nn.parameter import Parameter
 import collections
 from torch_utils import *
 
+class SupervisedPredictiveCodingV2():
+    
+    def __init__(self, architecture, activation = torch.sigmoid):
+        
+        self.architecture = architecture
+
+        self.activation = activation
+        self.variances = torch.ones(len(architecture))
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        # Feedforward Synapses Initialization
+        Wff = []
+        for idx in range(len(architecture)-1):
+            weight = (2 * torch.rand(architecture[idx + 1], architecture[idx]).to(self.device) - 1) * (4 * np.sqrt(6 / (architecture[idx + 1] + architecture[idx])))
+            bias = torch.zeros(architecture[idx + 1], 1).to(self.device)
+            Wff.append({'weight': weight.requires_grad_(), 'bias': bias.requires_grad_()})
+        Wff = np.array(Wff)
+
+        self.Wff = Wff
+
+    def forward(self, x, no_grad = False):
+        Wff = self.Wff
+        if no_grad:
+            with torch.no_grad():
+                neurons = []
+                for jj in range(len(Wff)):
+                    if jj == 0:
+                        neurons.append(Wff[jj]['weight'] @ self.activation(x) + Wff[jj]['bias'])
+                    else:
+                        neurons.append(Wff[jj]['weight'] @ self.activation(neurons[-1]) + Wff[jj]['bias'])
+        else:
+            neurons = []
+            for jj in range(len(Wff)):
+                if jj == 0:
+                    neurons.append(Wff[jj]['weight'] @ self.activation(x) + Wff[jj]['bias'])
+                else:
+                    neurons.append(Wff[jj]['weight'] @ self.activation(neurons[-1]) + Wff[jj]['bias'])
+        return neurons
+
+    def PC_loss(self, x, neurons):
+        F = 0
+        Wff = self.Wff
+        layers = [x] + neurons
+        for jj in range(len(Wff)):
+            error = (layers[jj + 1] - (Wff[jj]['weight'] @ self.activation(layers[jj]) + Wff[jj]['bias'])) / self.variances[jj]
+            # print(error.shape, torch.sum(error * error, 0).shape)
+            F -= self.variances[jj + 1] * torch.sum(error * error, 0)
+        return F
+
+    def run_neural_dynamics(self, x, y, neurons, neural_lr_start, neural_lr_stop, lr_rule = "constant", lr_decay_multiplier = 0.1, 
+                            neural_dynamic_iterations = 10):
+
+        mbs = x.size(1)
+        device = x.device
+
+        for jj in range(len(neurons) - 1):
+            neurons[jj] = neurons[jj].requires_grad_()
+        # pc_loss = self.PC_loss(x, neurons)
+        # init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) #Initializing gradients
+        # grads = torch.autograd.grad(pc_loss, neurons[:-1], grad_outputs=init_grads, create_graph=False) # dPhi/ds
+            
+        for iter_count in range(neural_dynamic_iterations):
+
+            if lr_rule == "constant":
+                neural_lr = neural_lr_start
+            elif lr_rule == "divide_by_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count + 1), neural_lr_stop)
+            elif lr_rule == "divide_by_slow_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count * lr_decay_multiplier + 1), neural_lr_stop)
+
+            pc_loss = self.PC_loss(x, neurons)
+            init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) #Initializing gradients
+            grads = torch.autograd.grad(pc_loss, neurons[:-1], grad_outputs=init_grads, create_graph=False) # dPhi/ds
+            
+            with torch.no_grad():       
+                for neuron_iter in range(len(neurons) - 1):
+                    # print(torch.norm(grads[neuron_iter]))
+                    neurons[neuron_iter] = neurons[neuron_iter] + neural_lr * grads[neuron_iter]
+                    neurons[neuron_iter].requires_grad = True
+
+        return neurons
+
+    def batch_step(self, x, y, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
+                   neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations = 10, mode = "train"):
+
+        Wff = self.Wff
+        neurons = self.forward(x, no_grad = True)
+
+        if mode == "train":
+            neurons[-1] = y.to(torch.float)
+
+        neurons = self.run_neural_dynamics( x, y, neurons, neural_lr_start, neural_lr_stop, lr_rule = neural_lr_rule,
+                                            lr_decay_multiplier = neural_lr_decay_multiplier, 
+                                            neural_dynamic_iterations = neural_dynamic_iterations)
+
+        pc_loss = self.PC_loss(x, neurons).mean()
+        pc_loss.backward()
+
 class SupervisedPredictiveCoding():
     
     def __init__(self, architecture, activation_type = "sigmoid"):
