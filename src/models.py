@@ -290,9 +290,9 @@ class CorInfoMaxV2():
                 if mode == "train":
                     init_grads[jj] = torch.zeros(*layers[jj + 1].shape, device = self.device)
                 else:
-                    init_grads[jj] = gam_ * B[jj]['weight'] @ layers_after_activation[jj + 1][0] - one_over_epsilon * (forward_errors[jj]) 
+                    init_grads[jj] = gam_ * B[jj]['weight'] @ layers[jj + 1] - one_over_epsilon * (forward_errors[jj]) 
             else:
-                init_grads[jj] = 2 * gam_ * B[jj]['weight'] @ layers_after_activation[jj + 1][0] - one_over_epsilon * (forward_errors[jj]) - one_over_epsilon * (backward_errors[jj] * layers_after_activation[jj+1][1])
+                init_grads[jj] = 2 * gam_ * B[jj]['weight'] @ layers[jj + 1] - one_over_epsilon * (forward_errors[jj]) - one_over_epsilon * (backward_errors[jj] * layers_after_activation[jj+1][1])
         return init_grads
 
     def run_neural_dynamics(self, x, y, neurons, neural_lr_start, neural_lr_stop, lr_rule = "constant", lr_decay_multiplier = 0.1, 

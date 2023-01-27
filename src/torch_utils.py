@@ -36,7 +36,6 @@ def torch2numpy(x):
     return x.detach().cpu().numpy()
     
 # Activation functions
-
 def activation_func(x, type_ = "linear"):
     if type_ == "linear":
         f_x = x
@@ -68,12 +67,13 @@ def activation_inverse(x, type_ = "linear"):
         f_x = 0.5 * torch.log((ones_vec + x) / (ones_vec - x))
     elif type_ == "sigmoid":
         ones_vec = torch.ones(*x.shape, device = x.device)
+        # f_x = torch.log(x / (ones_vec - x))
         f_x = torch.log(x / (ones_vec - x))
     elif type_ == "exp":
         f_x = torch.log(x)
     else: # Use linear inverse
         f_x = x 
-    return x
+    return f_x
 
 def my_sigmoid(x):
     return 1/(1+torch.exp(-4*(x-0.5)))
@@ -87,10 +87,11 @@ def ctrd_hard_sig(x):
 def my_hard_sig(x):
     return (1+F.hardtanh(x-1))*0.5
 
+# Some helper functions
 def outer_prod_broadcasting(A, B):
     """Broadcasting trick"""
     return A[...,None]*B[:,None]
-# Some helper functions
+
 def grad_or_zero(x):
     if x.grad is None:
         return torch.zeros_like(x).to(x.device)
@@ -129,8 +130,8 @@ def my_init(scale):
                 m.bias.data.mul_(0)
     return my_scaled_init
         
-def evaluateEP(model, loader, T, device, printing = True):
-    # Evaluate the model on a dataloader with T steps for the dynamics
+def evaluateEP(model, loader, T, neural_lr, device, printing = True):
+    # Evaluate the Equilibrium Propagation type model on a dataloader with T steps for the dynamics for classification task
     model.eval()
     correct=0
     phase = 'Train' if loader.dataset.train else 'Test'
@@ -138,7 +139,7 @@ def evaluateEP(model, loader, T, device, printing = True):
     for x, y in loader:
         x, y = x.to(device), y.to(device)
         neurons = model.init_neurons(x.size(0), device)
-        neurons = model(x, y, neurons, T) # dynamics for T time steps
+        neurons = model(x, y, neurons, T, neural_lr) # dynamics for T time steps
 
         # if not model.softmax:
         #     pred = torch.argmax(neurons[-1], dim=1).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
@@ -146,6 +147,71 @@ def evaluateEP(model, loader, T, device, printing = True):
         #     pred = torch.argmax(F.softmax(model.synapses[-1](neurons[-1].view(x.size(0),-1)), dim = 1), dim = 1).squeeze()
 
         pred = torch.argmax(neurons[-1], dim=1).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
+def evaluatePC(model, loader, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+               neural_lr_decay_multiplier, neural_dynamic_iterations, device, 
+               apply_activation_inverse = True, activation_type = "sigmoid", printing = True):
+    # Evaluate Predictive Coding Model on Classification Task
+    correct=0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        if apply_activation_inverse:
+            x = activation_inverse(x.view(x.size(0),-1).T, activation_type).to(device)
+        else:
+            x = x.view(x.size(0),-1).T.to(device)
+
+        y = y.to(device)
+        
+        neurons = model.fast_forward(x)
+
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
+def evaluateClassification(model, loader, device, printing = True):
+    # Evaluate Artificial Neural Network on Classification Task
+    model.eval()
+    correct = 0
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        
+        y_hat = model(x)
+        
+        pred = torch.argmax(y_hat, dim=1).squeeze()  
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print('Accuracy :\t', acc)   
+    return acc
+
+def evaluateContrastiveCorInfoMax(model, loader, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier,
+                                  T, device, printing = True):
+    # Evaluate the Contrastive CorInfoMax model on a dataloader with T steps for the dynamics for the classification task
+    correct = 0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons = model.run_neural_dynamics(x, 0, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
