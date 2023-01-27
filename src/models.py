@@ -27,7 +27,7 @@ class CorInfoMax():
         self.output_sparsity = output_sparsity
         self.STlambda_lr = STlambda_lr
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        
+        self.t = 0 # Used if optimizer is Adam
         # Feedforward Synapses Initialization
         Wff = []
         for idx in range(len(architecture)-1):
@@ -56,8 +56,42 @@ class CorInfoMax():
             B.append({'weight': weight})
         B = np.array(B)
             
+        ### Following moments are used if Adam optimizer is selected in the batch step function
+        m_Wff_moment = []
+        for idx in range(len(architecture)-1):
+            weight = torch.zeros(architecture[idx + 1], architecture[idx], requires_grad = False).to(self.device)
+            bias = torch.zeros(architecture[idx + 1], 1, requires_grad = False).to(self.device)
+            m_Wff_moment.append({'weight': weight, 'bias': bias})
+        m_Wff_moment = np.array(m_Wff_moment)
+
+        v_Wff_moment = []
+        for idx in range(len(architecture)-1):
+            weight = torch.zeros(architecture[idx + 1], architecture[idx], requires_grad = False).to(self.device)
+            bias = torch.zeros(architecture[idx + 1], 1, requires_grad = False).to(self.device)
+            v_Wff_moment.append({'weight': weight, 'bias': bias})
+        v_Wff_moment = np.array(v_Wff_moment)
+
+        ### Following moments are used if Adam optimizer is selected in the batch step function
+        m_Wfb_moment = []
+        for idx in range(len(architecture)-1):
+            weight = torch.zeros(architecture[idx], architecture[idx + 1], requires_grad = False).to(self.device)
+            bias = torch.zeros(architecture[idx], 1, requires_grad = False).to(self.device)
+            m_Wfb_moment.append({'weight': weight, 'bias': bias})
+        m_Wfb_moment = np.array(m_Wfb_moment)
+
+        v_Wfb_moment = []
+        for idx in range(len(architecture)-1):
+            weight = torch.zeros(architecture[idx], architecture[idx + 1], requires_grad = False).to(self.device)
+            bias = torch.zeros(architecture[idx], 1, requires_grad = False).to(self.device)
+            v_Wfb_moment.append({'weight': weight, 'bias': bias})
+        v_Wfb_moment = np.array(v_Wfb_moment)
+
         self.Wff = Wff
         self.Wfb = Wfb
+        self.m_Wff_moment = m_Wff_moment
+        self.m_Wfb_moment = m_Wfb_moment
+        self.v_Wff_moment = v_Wff_moment
+        self.v_Wfb_moment = v_Wfb_moment
         self.B = B
         
     def init_neurons(self, mbs, random_initialize = False, device = 'cuda'):
@@ -134,7 +168,16 @@ class CorInfoMax():
         return neurons
 
     def batch_step(self, x, y, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
-                   neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations = 10, beta = 1, mode = "train"):
+                   neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations = 10, beta = 1, mode = "train",
+                   optimizer = "sgd", adam_opt_params = {"beta1": 0.9, "beta2": 0.999, "eps": 1e-8}):
+
+        if optimizer == "adam":
+            t = self.t
+            m_Wff_moment = self.m_Wff_moment
+            v_Wff_moment = self.v_Wff_moment
+            m_Wfb_moment = self.m_Wfb_moment
+            v_Wfb_moment = self.v_Wfb_moment
+
         Wff, Wfb, B = self.Wff, self.Wfb, self.B
         lambda_ = self.lambda_
         gam_ = self.gam_
@@ -162,17 +205,54 @@ class CorInfoMax():
         ## Compute backward errors
         backward_errors = [layers[jj] - (Wfb[jj]['weight'] @ layers[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
 
-        ### Learning updates for feed-forward and backward weights
-        for jj in range(len(Wff)):
-            Wff[jj]['weight'] += lr['ff'] * torch.mean(outer_prod_broadcasting(forward_errors[jj].T, layers[jj].T), axis = 0)
-            Wff[jj]['bias'] += lr['ff'] * torch.mean(forward_errors[jj], axis = 1, keepdims = True)
+        if optimizer == "sgd":
+            ### Learning updates for feed-forward and backward weights
+            for jj in range(len(Wff)):
+                Wff[jj]['weight'] += lr['ff'] * torch.mean(outer_prod_broadcasting(forward_errors[jj].T, layers[jj].T), axis = 0)
+                Wff[jj]['bias'] += lr['ff'] * torch.mean(forward_errors[jj], axis = 1, keepdims = True)
 
-        for jj in range(1, len(Wfb)):
-            Wfb[jj]['weight'] += lr['fb'] * torch.mean(outer_prod_broadcasting(backward_errors[jj - 1].T, layers[jj + 1].T), axis = 0)
-            Wfb[jj]['bias'] += lr['fb'] * torch.mean(backward_errors[jj - 1], axis = 1, keepdims = True)
+            for jj in range(1, len(Wfb)):
+                Wfb[jj]['weight'] += lr['fb'] * torch.mean(outer_prod_broadcasting(backward_errors[jj - 1].T, layers[jj + 1].T), axis = 0)
+                Wfb[jj]['bias'] += lr['fb'] * torch.mean(backward_errors[jj - 1], axis = 1, keepdims = True)
 
-        self.Wff = Wff
-        self.Wfb = Wfb
+            self.Wff = Wff
+            self.Wfb = Wfb
+
+        elif optimizer == "adam":
+            t += 1
+            self.t = t
+            for jj in range(len(Wff)):
+                grad_Wff_weight = torch.mean(outer_prod_broadcasting(forward_errors[jj].T, layers[jj].T), axis = 0)
+                grad_Wff_bias = torch.mean(forward_errors[jj], axis = 1, keepdims = True)
+
+                m_Wff_moment[jj]["weight"] = adam_opt_params["beta1"] * m_Wff_moment[jj]["weight"] + (1 - adam_opt_params["beta1"]) * grad_Wff_weight
+                m_Wff_moment[jj]["bias"] = adam_opt_params["beta1"] * m_Wff_moment[jj]["bias"] + (1 - adam_opt_params["beta1"]) * grad_Wff_bias
+
+                v_Wff_moment[jj]["weight"] =  adam_opt_params["beta2"] * v_Wff_moment[jj]["weight"] + (1 - adam_opt_params["beta2"]) * (grad_Wff_weight ** 2)
+                v_Wff_moment[jj]["bias"] =  adam_opt_params["beta2"] * v_Wff_moment[jj]["bias"] + (1 - adam_opt_params["beta2"]) * (grad_Wff_bias ** 2)
+
+                Wff[jj]['weight'] += lr['ff'] * np.sqrt(1 - adam_opt_params["beta2"] ** t) / (1 -  adam_opt_params["beta1"] ** t) * m_Wff_moment[jj]["weight"] / (torch.sqrt(v_Wff_moment[jj]["weight"]) + adam_opt_params["eps"])
+                Wff[jj]['bias'] += lr['ff'] * np.sqrt(1 - adam_opt_params["beta2"] ** t) / (1 -  adam_opt_params["beta1"] ** t) * m_Wff_moment[jj]["bias"] / (torch.sqrt(v_Wff_moment[jj]["bias"]) + adam_opt_params["eps"])
+            
+            for jj in range(1, len(Wfb)):
+                grad_Wfb_weight = torch.mean(outer_prod_broadcasting(backward_errors[jj - 1].T, layers[jj + 1].T), axis = 0)
+                grad_Wfb_bias = torch.mean(backward_errors[jj - 1], axis = 1, keepdims = True)
+
+                m_Wfb_moment[jj]["weight"] = adam_opt_params["beta1"] * m_Wfb_moment[jj]["weight"] + (1 - adam_opt_params["beta1"]) * grad_Wfb_weight
+                m_Wfb_moment[jj]["bias"] = adam_opt_params["beta1"] * m_Wfb_moment[jj]["bias"] + (1 - adam_opt_params["beta1"]) * grad_Wfb_bias
+
+                v_Wfb_moment[jj]["weight"] =  adam_opt_params["beta2"] * v_Wfb_moment[jj]["weight"] + (1 - adam_opt_params["beta2"]) * (grad_Wfb_weight ** 2)
+                v_Wfb_moment[jj]["bias"] =  adam_opt_params["beta2"] * v_Wfb_moment[jj]["bias"] + (1 - adam_opt_params["beta2"]) * (grad_Wfb_bias ** 2)
+
+                Wfb[jj]['weight'] += lr['ff'] * np.sqrt(1 - adam_opt_params["beta2"] ** t) / (1 -  adam_opt_params["beta1"] ** t) * m_Wfb_moment[jj]["weight"] / (torch.sqrt(v_Wfb_moment[jj]["weight"]) + adam_opt_params["eps"])
+                Wfb[jj]['bias'] += lr['ff'] * np.sqrt(1 - adam_opt_params["beta2"] ** t) / (1 -  adam_opt_params["beta1"] ** t) * m_Wfb_moment[jj]["bias"] / (torch.sqrt(v_Wfb_moment[jj]["bias"]) + adam_opt_params["eps"])
+            
+            self.Wff = Wff
+            self.Wfb = Wfb
+            self.m_Wff_moment = m_Wff_moment
+            self.v_Wff_moment = v_Wff_moment
+            self.m_Wfb_moment = m_Wfb_moment
+            self.v_Wfb_moment = v_Wfb_moment
         return neurons
 
 
