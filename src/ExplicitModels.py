@@ -130,7 +130,7 @@ class SupervisedPredictiveCoding():
                                             neural_lr_decay_multiplier, neural_dynamic_iterations)
 
         layers = [x] + neurons  # concatenate the input to other layers
-        layers_after_activation = [list(self.activation_func(layers[jj], self.activation_type)) for jj in range(len(layers))]
+        layers_after_activation = [list(self.activation_func(layers[jj], self.activation_type)) for jj in range(len(layers) - 1)] + [neurons[-1]]
         error_layers = [(layers[jj+1] - (Wff[jj]['weight'] @ layers_after_activation[jj][0] + Wff[jj]['bias'])) / self.variances[jj + 1] for jj in range(len(layers) - 1)]
 
         if optimizer == "sgd":
