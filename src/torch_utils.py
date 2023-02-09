@@ -154,9 +154,7 @@ def evaluateEP(model, loader, T, neural_lr, device, printing = True):
         print(phase+' accuracy :\t', acc)   
     return acc
 
-def evaluatePC(model, loader, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-               neural_lr_decay_multiplier, neural_dynamic_iterations, device, 
-               apply_activation_inverse = True, activation_type = "sigmoid", printing = True):
+def evaluatePC(model, loader, device, apply_activation_inverse = True, activation_type = "sigmoid", printing = True):
     # Evaluate Predictive Coding Model on Classification Task
     correct=0
     phase = 'Train' if loader.dataset.train else 'Test'
