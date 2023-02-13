@@ -270,7 +270,6 @@ class CSM(torch.nn.Module):
             self.M_copy[idx].weight.data = self.M[idx].weight.data
             self.M_copy[idx].weight.data.requires_grad_(False)
 
-
 class ContrastiveCorInfoMax():
     
     def __init__(self, architecture, lambda_, epsilon, activation = hard_sigmoid, output_sparsity = False, STlambda_lr = 0.01):
