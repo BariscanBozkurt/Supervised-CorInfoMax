@@ -312,6 +312,236 @@ class ContrastiveCorInfoMax():
             B.append({'weight': weight})
         B = np.array(B)
             
+        self.Rh1 = torch.eye(architecture[1], architecture[1]).to(self.device) # For checking the true correlation matrix
+        self.Rh2 = (0*torch.eye(architecture[1], architecture[1])).to(self.device) # For checking the true correlation matrix
+
+        self.Wff = Wff
+        self.Wfb = Wfb
+        self.B = B
+        
+    def init_neurons(self, mbs, random_initialize = False, device = 'cuda'):
+        # Initializing the neurons
+        if random_initialize:
+            neurons = []
+            append = neurons.append
+            for size in self.architecture[1:]:  
+                append(torch.randn((mbs, size), requires_grad=False, device=device).T)       
+        else:
+            neurons = []
+            append = neurons.append
+            for size in self.architecture[1:]:  
+                append(torch.zeros((mbs, size), requires_grad=False, device=device).T)
+        return neurons
+
+    def calculate_neural_dynamics_grad(self, x, y, neurons, beta):
+        Wff = self.Wff
+        Wfb = self.Wfb
+        B = self.B
+        gam_ = self.gam_
+        one_over_epsilon = self.one_over_epsilon
+
+        layers = [x] + neurons  # concatenate the input to other layers
+        init_grads = [torch.zeros(*neurons_.shape, dtype = torch.float, device = self.device) for neurons_ in neurons]
+
+        for jj in range(len(init_grads)):
+            if jj == len(init_grads) - 1:
+                init_grads[jj] = gam_ * B[jj]['weight'] @ layers[jj + 1] - one_over_epsilon * (layers[jj + 1] - (Wff[jj]['weight'] @ layers[jj] + Wff[jj]['bias'])) + 2 * beta * (y - layers[jj + 1])
+            else:
+                init_grads[jj] = 2 * gam_ * B[jj]['weight'] @ layers[jj + 1] - one_over_epsilon * (layers[jj + 1] - (Wff[jj]['weight'] @ layers[jj] + Wff[jj]['bias'])) - one_over_epsilon * (layers[jj + 1] - (Wfb[jj + 1]['weight'] @ layers[jj + 2] + Wfb[jj + 1]['bias']))
+        return init_grads
+
+    def run_neural_dynamics(self, x, y, neurons, neural_lr_start, neural_lr_stop, lr_rule = "constant", lr_decay_multiplier = 0.1, 
+                            neural_dynamic_iterations = 10, beta = 1):
+        if self.output_sparsity:
+            mbs = x.size(1)
+            STLAMBD = torch.zeros(1, mbs).to(self.device)
+            STlambda_lr = self.STlambda_lr
+        for iter_count in range(neural_dynamic_iterations):
+
+            if lr_rule == "constant":
+                neural_lr = neural_lr_start
+            elif lr_rule == "divide_by_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count + 1), neural_lr_stop)
+            elif lr_rule == "divide_by_slow_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count * lr_decay_multiplier + 1), neural_lr_stop)
+
+            with torch.no_grad():       
+                neuron_grads = self.calculate_neural_dynamics_grad(x, y, neurons, beta)
+
+                for neuron_iter in range(len(neurons)):
+                    if neuron_iter == len(neurons) - 1:
+                        if self.output_sparsity:
+                            neurons[neuron_iter] = F.relu(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter] - STLAMBD)
+                            STLAMBD = STLAMBD + STlambda_lr * (torch.sum(neurons[neuron_iter], 0).view(1, -1) - 1)
+                        else:
+                            neurons[neuron_iter] = self.activation(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter])
+                    else:
+                        neurons[neuron_iter] = self.activation(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter])
+        return neurons
+
+    def batch_step(self, x, y, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
+                   neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, neural_dynamic_iterations_nudged = 10, 
+                   beta = 1, make_B_off_diag_nonpositive = False):
+        Wff, Wfb, B = self.Wff, self.Wfb, self.B
+        lambda_ = self.lambda_
+        gam_ = self.gam_
+
+        # neurons = self.init_neurons(x.size(1), device = self.device)
+        neurons = self.init_neurons(x.size(1), device = self.device)
+
+        neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                           neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0)
+        
+        neurons1 = neurons.copy()
+        # ### Lateral Weight Updates
+        # for jj in range(len(B)):
+        #     z = B[jj]['weight'] @ neurons[jj]
+        #     B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+        #     B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+
+        # self.B = B
+
+        neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                           neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
+
+        neurons2 = neurons.copy()
+
+        layers_free = [x] + neurons1
+        layers_nudged = [x] + neurons2
+
+        ## Compute forward errors
+        forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        ## Compute backward errors
+        backward_errors_free = [layers_free[jj] - (Wfb[jj]['weight'] @ layers_free[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+        backward_errors_nudged = [layers_nudged[jj] - (Wfb[jj]['weight'] @ layers_nudged[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+
+        ### Learning updates for feed-forward and backward weights
+        for jj in range(len(Wff)):
+            Wff[jj]['weight'] -= (1/beta) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_free[jj].T, layers_free[jj].T) - outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
+            Wff[jj]['bias'] -= (1/beta) * lr['ff'][jj] * torch.mean(forward_errors_free[jj] - forward_errors_nudged[jj], axis = 1, keepdims = True)
+
+        for jj in range(1, len(Wfb)):
+            Wfb[jj]['weight'] -= (1/beta) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_free[jj - 1].T, layers_free[jj + 1].T) - outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
+            Wfb[jj]['bias'] -= (1/beta) * lr['fb'][jj] * torch.mean(backward_errors_free[jj - 1] - backward_errors_nudged[jj - 1], axis = 1, keepdims = True)
+
+        ### Lateral Weight Updates
+        for jj in range(len(B)):
+            z = B[jj]['weight'] @ neurons[jj]
+            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+        
+        if make_B_off_diag_nonpositive:
+            for jj in range(len(B)):
+                B[jj]['weight'] = torch_make_off_diag_nonpositive(B[jj]['weight'])
+                
+        self.Rh1 = lambda_ * self.Rh1 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
+        self.Rh2 = lambda_ * self.Rh2 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
+        self.B = B
+        self.Wff = Wff
+        self.Wfb = Wfb
+        return neurons
+
+    def batch_step_noEP(self, x, y, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
+                        neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, neural_dynamic_iterations_nudged = 10, beta = 1):
+        Wff, Wfb, B = self.Wff, self.Wfb, self.B
+        lambda_ = self.lambda_
+        gam_ = self.gam_
+
+        # neurons = self.init_neurons(x.size(1), device = self.device)
+        neurons = self.init_neurons(x.size(1), device = self.device)
+
+        neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                           neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0)
+        
+        neurons1 = neurons.copy()
+        # ### Lateral Weight Updates
+        # for jj in range(len(B)):
+        #     z = B[jj]['weight'] @ neurons[jj]
+        #     B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+        #     B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+
+        # self.B = B
+
+        neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                           neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
+
+        neurons2 = neurons.copy()
+
+        layers_free = [x] + neurons1
+        layers_nudged = [x] + neurons2
+
+        ## Compute forward errors
+        forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        ## Compute backward errors
+        backward_errors_free = [layers_free[jj] - (Wfb[jj]['weight'] @ layers_free[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+        backward_errors_nudged = [layers_nudged[jj] - (Wfb[jj]['weight'] @ layers_nudged[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+
+        ### Learning updates for feed-forward and backward weights
+        for jj in range(len(Wff)):
+            Wff[jj]['weight'] -= (1/beta) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_free[jj].T, layers_free[jj].T) - outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
+            Wff[jj]['bias'] -= (1/beta) * lr['ff'][jj] * torch.mean(forward_errors_free[jj] - forward_errors_nudged[jj], axis = 1, keepdims = True)
+
+        for jj in range(1, len(Wfb)):
+            Wfb[jj]['weight'] -= (1/beta) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_free[jj - 1].T, layers_free[jj + 1].T) - outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
+            Wfb[jj]['bias'] -= (1/beta) * lr['fb'][jj] * torch.mean(backward_errors_free[jj - 1] - backward_errors_nudged[jj - 1], axis = 1, keepdims = True)
+
+        ### Lateral Weight Updates
+        for jj in range(len(B)):
+            z = B[jj]['weight'] @ neurons[jj]
+            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+
+        self.B = B
+        self.Wff = Wff
+        self.Wfb = Wfb
+        return neurons
+
+
+
+class ContrastiveCorInfoMax_wCWU():
+    
+    def __init__(self, architecture, lambda_, epsilon, activation = hard_sigmoid, output_sparsity = False, STlambda_lr = 0.01):
+        
+        self.architecture = architecture
+        self.lambda_ = lambda_
+        self.gam_ = (1 - lambda_) / lambda_
+        self.epsilon = epsilon
+        self.one_over_epsilon = 1 / epsilon
+        self.activation = activation
+        self.output_sparsity = output_sparsity
+        self.STlambda_lr = STlambda_lr
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        
+        # Feedforward Synapses Initialization
+        Wff = []
+        for idx in range(len(architecture)-1):
+            weight = torch.randn(architecture[idx + 1], architecture[idx], requires_grad = False).to(self.device)
+            torch.nn.init.xavier_uniform_(weight)
+            bias = torch.zeros(architecture[idx + 1], 1, requires_grad = False).to(self.device)
+            Wff.append({'weight': weight, 'bias': bias})
+        Wff = np.array(Wff)
+        
+        # Feedback Synapses Initialization
+        Wfb = []
+        for idx in range(len(architecture)-1):
+            weight = torch.randn(architecture[idx], architecture[idx + 1], requires_grad = False).to(self.device)
+            torch.nn.init.xavier_uniform_(weight)
+            bias = torch.zeros(architecture[idx], 1, requires_grad = False).to(self.device)
+            Wfb.append({'weight': weight, 'bias': bias})
+        Wfb = np.array(Wfb)
+        
+        # Lateral Synapses Initialization
+        B = []
+        for idx in range(len(architecture)-1):
+            weight = torch.randn(architecture[idx + 1], architecture[idx + 1], requires_grad = False).to(self.device)
+            torch.nn.init.xavier_uniform_(weight)
+            weight = weight @ weight.T
+            weight = 1.0*torch.eye(architecture[idx + 1], architecture[idx + 1], requires_grad = False).to(self.device)
+            B.append({'weight': weight})
+        B = np.array(B)
+            
         self.Wff = Wff
         self.Wfb = Wfb
         self.B = B
@@ -396,31 +626,32 @@ class ContrastiveCorInfoMax():
         #     B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
 
         # self.B = B
-
-        neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                           neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
-
-        neurons2 = neurons.copy()
-
         layers_free = [x] + neurons1
-        layers_nudged = [x] + neurons2
+        for k in range(neural_dynamic_iterations_nudged):
+            neurons = self.run_neural_dynamics(x, y, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                            neural_lr_decay_multiplier, 1, beta)
 
-        ## Compute forward errors
-        forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
-        forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
-        ## Compute backward errors
-        backward_errors_free = [layers_free[jj] - (Wfb[jj]['weight'] @ layers_free[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
-        backward_errors_nudged = [layers_nudged[jj] - (Wfb[jj]['weight'] @ layers_nudged[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+            neurons2 = neurons.copy()
 
-        ### Learning updates for feed-forward and backward weights
-        for jj in range(len(Wff)):
-            Wff[jj]['weight'] -= (1/beta) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_free[jj].T, layers_free[jj].T) - outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
-            Wff[jj]['bias'] -= (1/beta) * lr['ff'][jj] * torch.mean(forward_errors_free[jj] - forward_errors_nudged[jj], axis = 1, keepdims = True)
+            layers_nudged = [x] + neurons2
 
-        for jj in range(1, len(Wfb)):
-            Wfb[jj]['weight'] -= (1/beta) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_free[jj - 1].T, layers_free[jj + 1].T) - outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
-            Wfb[jj]['bias'] -= (1/beta) * lr['fb'][jj] * torch.mean(backward_errors_free[jj - 1] - backward_errors_nudged[jj - 1], axis = 1, keepdims = True)
+            ## Compute forward errors
+            forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+            forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+            ## Compute backward errors
+            backward_errors_free = [layers_free[jj] - (Wfb[jj]['weight'] @ layers_free[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+            backward_errors_nudged = [layers_nudged[jj] - (Wfb[jj]['weight'] @ layers_nudged[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
 
+            ### Learning updates for feed-forward and backward weights
+            for jj in range(len(Wff)):
+                Wff[jj]['weight'] -= (1/beta) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_free[jj].T, layers_free[jj].T) - outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
+                Wff[jj]['bias'] -= (1/beta) * lr['ff'][jj] * torch.mean(forward_errors_free[jj] - forward_errors_nudged[jj], axis = 1, keepdims = True)
+
+            for jj in range(1, len(Wfb)):
+                Wfb[jj]['weight'] -= (1/beta) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_free[jj - 1].T, layers_free[jj + 1].T) - outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
+                Wfb[jj]['bias'] -= (1/beta) * lr['fb'][jj] * torch.mean(backward_errors_free[jj - 1] - backward_errors_nudged[jj - 1], axis = 1, keepdims = True)
+
+            layers_free = layers_nudged
         ### Lateral Weight Updates
         for jj in range(len(B)):
             z = B[jj]['weight'] @ neurons[jj]
