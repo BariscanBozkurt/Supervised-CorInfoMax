@@ -42,7 +42,7 @@ def torch_make_off_diag_nonpositive(X):
     X_diag = torch.diag(torch.diag(X))
     X_off_diag = X - X_diag
     
-    return X_diag + torch.relu(X_off_diag)
+    return X_diag - torch.relu(-X_off_diag)
 
 # Activation functions
 def activation_func(x, type_ = "linear"):
