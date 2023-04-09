@@ -314,6 +314,7 @@ class ContrastiveCorInfoMax():
             
         self.Rh1 = torch.eye(architecture[1], architecture[1]).to(self.device) # For checking the true correlation matrix
         self.Rh2 = (0*torch.eye(architecture[1], architecture[1])).to(self.device) # For checking the true correlation matrix
+        self.Bhdiag_list = []
 
         self.Wff = Wff
         self.Wfb = Wfb
@@ -434,7 +435,8 @@ class ContrastiveCorInfoMax():
         if make_B_off_diag_nonpositive:
             for jj in range(len(B)):
                 B[jj]['weight'] = torch_make_off_diag_nonpositive(B[jj]['weight'])
-                
+        
+        self.Bhdiag_list.append(torch.diag(B[0]['weight']))
         self.Rh1 = lambda_ * self.Rh1 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
         self.Rh2 = lambda_ * self.Rh2 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
         self.B = B
