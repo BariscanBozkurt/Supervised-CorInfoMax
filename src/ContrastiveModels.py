@@ -580,7 +580,8 @@ class ContrastiveCorInfoMax():
         return neurons
 
 class ContrastiveCorInfoMaxHopfield():
-
+    """This is the algorithm to be used in the paper. The summary will be added later.
+    """
     def __init__(self, architecture, lambda_, epsilon, activation = hard_sigmoid, output_sparsity = False, STlambda_lr = 0.01):
         
         self.architecture = architecture
@@ -675,16 +676,16 @@ class ContrastiveCorInfoMaxHopfield():
                     if jj == len(neurons) - 1:
                         # print("here if")
                         basal_voltage = Wff[jj]['weight'] @ layers[jj] + Wff[jj]['bias']
-                        apical_voltage = epsilon * (gam_ * B[jj]['weight'] @ layers[jj + 1] + hopfield_g * layers[jj + 1])
-                        gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj]) + 2 * beta * (y - layers[jj + 1])
+                        apical_voltage = (gam_ * B[jj]['weight'] @ layers[jj + 1] + hopfield_g * layers[jj + 1]) + beta * (y - layers[jj + 1])
+                        gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
                         neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                         neurons[jj] = self.activation(neurons_intermediate[jj])
                         # init_grads[jj] = gam_ * B[jj]['weight'] @ layers[jj + 1] - one_over_epsilon * (layers[jj + 1] - (Wff[jj]['weight'] @ layers[jj] + Wff[jj]['bias'])) + 2 * beta * (y - layers[jj + 1])
                     else:
                         # print("here else")
                         basal_voltage = Wff[jj]['weight'] @ layers[jj] + Wff[jj]['bias']
-                        apical_voltage = 2 * epsilon * (gam_ * B[jj]['weight'] @ layers[jj + 1] + hopfield_g * layers[jj + 1]) + Wfb[jj + 1]['weight'] @ layers[jj + 2] + Wfb[jj + 1]['bias']
-                        gradient_neurons = - 2 * hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                        apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ layers[jj + 1] + hopfield_g * layers[jj + 1]) + Wfb[jj + 1]['weight'] @ layers[jj + 2] + Wfb[jj + 1]['bias']
+                        gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
                         neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                         neurons[jj] = self.activation(neurons_intermediate[jj])
                     layers = [x] + neurons  # concatenate the input to other layers
@@ -750,6 +751,52 @@ class ContrastiveCorInfoMaxHopfield():
         self.Wfb = Wfb
         return neurons
 
+    def batch_step_hopfield_noEP(self, x, y, hopfield_g, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
+                                 neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, neural_dynamic_iterations_nudged = 10, beta = 1):
+        Wff, Wfb, B = self.Wff, self.Wfb, self.B
+        lambda_ = self.lambda_
+        gam_ = self.gam_
+
+        # neurons = self.init_neurons(x.size(1), device = self.device)
+        neurons = self.init_neurons(x.size(1), device = self.device)
+
+        neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                                    neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
+
+        neurons2 = neurons.copy()
+
+        # layers_free = [x] + neurons1
+        layers_nudged = [x] + neurons2
+
+        ## Compute forward errors
+        # forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj] + Wff[jj]['bias']) for jj in range(len(Wff))]
+        ## Compute backward errors
+        # backward_errors_free = [layers_free[jj] - (Wfb[jj]['weight'] @ layers_free[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+        backward_errors_nudged = [layers_nudged[jj] - (Wfb[jj]['weight'] @ layers_nudged[jj + 1] + Wfb[jj]['bias']) for jj in range(1, len(Wfb))]
+
+        ### Learning updates for feed-forward and backward weights
+        for jj in range(len(Wff)):
+            Wff[jj]['weight'] += (1/beta) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
+            Wff[jj]['bias'] += (1/beta) * lr['ff'][jj] * torch.mean(forward_errors_nudged[jj], axis = 1, keepdims = True)
+
+        for jj in range(1, len(Wfb)):
+            Wfb[jj]['weight'] += (1/beta) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
+            Wfb[jj]['bias'] += (1/beta) * lr['fb'][jj] * torch.mean(backward_errors_nudged[jj - 1], axis = 1, keepdims = True)
+
+        ### Lateral Weight Updates
+        for jj in range(len(B)):
+            z = B[jj]['weight'] @ neurons[jj]
+            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+        
+        self.Bhdiag_list.append(torch.diag(B[0]['weight']))
+        self.Rh1 = lambda_ * self.Rh1 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
+        self.Rh2 = lambda_ * self.Rh2 + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons[0].T, neurons[0].T), axis = 0)
+        self.B = B
+        self.Wff = Wff
+        self.Wfb = Wfb
+        return neurons
 
 class ContrastiveCorInfoMax_wCWU():
     
