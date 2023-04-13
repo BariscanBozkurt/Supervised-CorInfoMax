@@ -8,3 +8,7 @@ Debug*
 *Debug
 *Debug*
 debugfiles
+Results
+*Results
+*sh
+*.out
