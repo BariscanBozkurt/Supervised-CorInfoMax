@@ -119,6 +119,7 @@ def copy(neurons):
     return copy
 
 def my_init(scale):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/blob/93660ed6c5b0ec07978b674a69c169ce32e8cd5f/model_utils.py
     def my_scaled_init(m):
         if isinstance(m, torch.nn.Conv2d):
             torch.nn.init.kaiming_uniform_(m.weight, math.sqrt(5))
@@ -139,6 +140,22 @@ def my_init(scale):
                 m.bias.data.mul_(0)
     return my_scaled_init
         
+def angle_between_two_matrices(A, B):
+    """Computes the angle between two matrices A and B.
+
+    Args:
+        A (torch.Tensor): Pytorch tensor of size m times n
+        B (torch.Tensor): Pytorch tensor of size m times n
+
+    Returns:
+        angle: angle between the matrices A and B. The formula is given by the following:
+               (180/pi) * acos[ Tr(A @ B.T) / sqrt(Tr(A @ A.T) * Tr(B @ B.T))] 
+    """
+
+    angle = (180 / torch.pi) * torch.acos(torch.trace(A @ B.T) / torch.sqrt(torch.trace(A @ A.T) * torch.trace(B @ B.T)))
+    return angle
+
+# Model Evaluation Functions
 def evaluateEP(model, loader, T, neural_lr, device, printing = True):
     # Evaluate the Equilibrium Propagation type model on a dataloader with T steps for the dynamics for classification task
     model.eval()
@@ -226,9 +243,10 @@ def evaluateContrastiveCorInfoMax(model, loader, neural_lr_start, neural_lr_stop
         print(phase+' accuracy :\t', acc)   
     return acc
 
-def evaluateContrastiveCorInfoMaxHopfield(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier,
+def evaluateContrastiveCorInfoMaxHopfield(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, 
+                                          neural_lr_rule, neural_lr_decay_multiplier,
                                           T, device, printing = True):
-    # Evaluate the Contrastive CorInfoMax model on a dataloader with T steps for the dynamics for the classification task
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
     correct = 0
     phase = 'Train' if loader.dataset.train else 'Test'
     
