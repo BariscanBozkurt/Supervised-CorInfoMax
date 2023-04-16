@@ -693,7 +693,8 @@ class ContrastiveCorInfoMaxHopfield():
         return neurons
 
     def batch_step_hopfield(self, x, y, hopfield_g, lr, neural_lr_start, neural_lr_stop, neural_lr_rule = "constant", 
-                            neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, neural_dynamic_iterations_nudged = 10, beta = 1):
+                            neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, 
+                            neural_dynamic_iterations_nudged = 10, beta = 1, use_three_phase = False):
         Wff, Wfb, B = self.Wff, self.Wfb, self.B
         lambda_ = self.lambda_
         gam_ = self.gam_
@@ -702,7 +703,7 @@ class ContrastiveCorInfoMaxHopfield():
         neurons = self.init_neurons(x.size(1), device = self.device)
 
         neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                           neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0)
+                                                    neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0)
         
         neurons1 = neurons.copy()
         # ### Lateral Weight Updates
@@ -714,11 +715,20 @@ class ContrastiveCorInfoMaxHopfield():
         # self.B = B
 
         neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                           neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
+                                                    neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
 
         neurons2 = neurons.copy()
 
-        layers_free = [x] + neurons1
+        if use_three_phase:
+            neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                                        neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, -beta)
+
+            neurons3 = neurons.copy()
+
+            layers_free = [x] + neurons3
+        else:
+            layers_free = [x] + neurons1
+            
         layers_nudged = [x] + neurons2
 
         ## Compute forward errors

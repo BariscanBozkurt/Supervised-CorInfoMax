@@ -23,6 +23,12 @@ class SupervisedPredictiveCoding():
             # torch.nn.init.xavier_uniform_(weight)
             weight = (2 * torch.rand(architecture[idx + 1], architecture[idx], requires_grad = False).to(self.device) - 1) * (4 * np.sqrt(6 / (architecture[idx + 1] + architecture[idx])))
             bias = torch.zeros(architecture[idx + 1], 1, requires_grad = False).to(self.device)
+
+            torch.nn.init.kaiming_uniform_(weight)
+            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(weight)
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            torch.nn.init.uniform_(bias, -bound, bound)
+            
             Wff.append({'weight': weight, 'bias': bias})
         Wff = np.array(Wff)
 
