@@ -39,13 +39,13 @@ class ContrastiveCorInfoMaxHopfield():
         Wff = []
         for idx in range(len(architecture)-1):
             weight = torch.randn(architecture[idx + 1], architecture[idx], requires_grad = False).to(self.device)
-            # torch.nn.init.xavier_uniform_(weight)
+            torch.nn.init.xavier_uniform_(weight)
             bias = torch.zeros(architecture[idx + 1], 1, requires_grad = False).to(self.device)
 
-            torch.nn.init.kaiming_uniform_(weight)
-            fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(weight)
-            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
-            torch.nn.init.uniform_(bias, -bound, bound)
+            # torch.nn.init.kaiming_uniform_(weight)
+            # fan_in, _ = torch.nn.init._calculate_fan_in_and_fan_out(weight)
+            # bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            # torch.nn.init.uniform_(bias, -bound, bound)
 
             Wff.append({'weight': weight, 'bias': bias})
         Wff = np.array(Wff)
@@ -53,9 +53,10 @@ class ContrastiveCorInfoMaxHopfield():
         # Feedback Synapses Initialization
         Wfb = []
         for idx in range(len(architecture)-1):
-            weight = torch.randn(architecture[idx] + 1, architecture[idx + 1], requires_grad = False).to(self.device)
-            # torch.nn.init.xavier_uniform_(weight)
-            torch.nn.init.kaiming_uniform_(weight)
+            # weight = torch.randn(architecture[idx] + 1, architecture[idx + 1], requires_grad = False).to(self.device)
+            weight = torch.eye(architecture[idx] + 1, architecture[idx + 1], requires_grad = False).to(self.device)
+            torch.nn.init.xavier_uniform_(weight)
+            # torch.nn.init.kaiming_uniform_(weight)
             # bias = torch.zeros(architecture[idx], 1, requires_grad = False).to(self.device)
             Wfb.append({'weight': weight})
         Wfb = np.array(Wfb)
@@ -63,10 +64,10 @@ class ContrastiveCorInfoMaxHopfield():
         # Lateral Synapses Initialization
         B = []
         for idx in range(len(architecture)-1):
-            # weight = torch.randn(architecture[idx + 1], architecture[idx + 1], requires_grad = False).to(self.device)
-            # torch.nn.init.xavier_uniform_(weight)
-            # weight = weight @ weight.T
-            weight = 1.0*torch.eye(architecture[idx + 1] + 1, architecture[idx + 1] + 1, requires_grad = False).to(self.device)
+            weight = torch.randn(architecture[idx + 1] + 1, architecture[idx + 1] + 1, requires_grad = False).to(self.device)
+            torch.nn.init.xavier_uniform_(weight)
+            weight = weight @ weight.T
+            # weight = 1.0*torch.eye(architecture[idx + 1] + 1, architecture[idx + 1] + 1, requires_grad = False).to(self.device)
             B.append({'weight': weight})
         B = np.array(B)
 
@@ -98,6 +99,11 @@ class ContrastiveCorInfoMaxHopfield():
         self.layerwise_backward_corinfo_list_free = []
         self.layerwise_forward_corinfo_list_nudged = []
         self.layerwise_backward_corinfo_list_nudged = []
+
+        self.neural_dynamics_free_forward_info_list = []
+        self.neural_dynamics_free_backward_info_list = []
+        self.neural_dynamics_nudged_forward_info_list = []
+        self.neural_dynamics_nudged_backward_info_list = []
 
     ###############################################################
     ############### HELPER METHODS ################################
@@ -157,48 +163,108 @@ class ContrastiveCorInfoMaxHopfield():
         angle = (180 / torch.pi) * torch.acos(torch.trace(A @ B.T) / torch.sqrt(torch.trace(A @ A.T) * torch.trace(B @ B.T)))
         return angle
 
-    def layerwise_forward_and_backward_correlative_information(self, layers_free, layers_nudged):
+    def layerwise_forward_and_backward_correlative_information(self, layers, phase = "free"):
         Wff = self.Wff
         Wfb = self.Wfb
-        Rfree = self.Rfree 
-        Rnudged = self.Rnudged
+        if phase == "free":
+            R = self.Rfree 
+        elif phase == "nudged":
+            R = self.Rnudged
         epsilon = self.epsilon
         one_over_epsilon = self.one_over_epsilon
         device = self.device
         architecture = self.architecture
 
         # epsilon_tensor = torch.Tensor([epsilon]).to(device)
-        batch_size_sqrt_root = np.sqrt(layers_free[0].shape[1])
+        batch_size = layers[0].shape[1]
+        batch_size_sqrt_root = np.sqrt(batch_size)
         log_epsilon = np.log(epsilon)
 
-        forward_info_list_free = []
-        backward_info_list_free = []
-        forward_info_list_nudged = []
-        backward_info_list_nudged = []
+        forward_info_list = []
+        backward_info_list = []
 
         for jj in range(len(architecture) - 2):
-            Identity_Matrix = epsilon * torch.eye(*Rnudged[jj + 1]['weight'].shape).to(device)
-            forward_info_jj_nudged = (torch.logdet(Rnudged[jj + 1]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(layers_nudged[jj + 2] - Wff[jj + 1]['weight'] @ layers_nudged[jj + 1] - Wff[jj + 1]['bias']) ** 2 + layers_nudged[jj + 2].shape[0] * log_epsilon).item()
-            forward_info_jj_free = (torch.logdet(Rfree[jj + 1]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(layers_free[jj + 2] - Wff[jj + 1]['weight'] @ layers_free[jj + 1] - Wff[jj + 1]['bias']) ** 2 + layers_free[jj + 2].shape[0] * log_epsilon).item()
+            Identity_Matrix = epsilon * torch.eye(*R[jj + 1]['weight'].shape).to(device)
+            forward_info_jj= (torch.logdet(R[jj + 1]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(layers[jj + 2] - Wff[jj + 1]['weight'] @ layers[jj + 1] - Wff[jj + 1]['bias']) ** 2 - layers[jj + 2].shape[0] * log_epsilon)).item()
 
-            forward_info_list_nudged.append(forward_info_jj_nudged)
-            forward_info_list_free.append(forward_info_jj_free)
+            forward_info_list.append(forward_info_jj)
 
         for jj in range(len(architecture) - 2):
-            Identity_Matrix = epsilon * torch.eye(*Rnudged[jj]['weight'].shape).to(device)
-            backward_info_jj_nudged = (torch.logdet(Rnudged[jj]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_nudged[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_nudged[jj + 2]) ** 2 + (layers_nudged[jj + 1].shape[0] + 1) * log_epsilon).item()
-            backward_info_jj_free = (torch.logdet(Rfree[jj]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_free[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_free[jj + 2]) ** 2 + (layers_free[jj + 1].shape[0] + 1) * log_epsilon).item()
+            Identity_Matrix = epsilon * torch.eye(*R[jj]['weight'].shape).to(device)
+            backward_info_jj = (torch.logdet(R[jj]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers[jj + 1]) - Wfb[jj + 1]['weight'] @ layers[jj + 2]) ** 2 - (layers[jj + 1].shape[0] + 1) * log_epsilon)).item()
 
-            backward_info_list_nudged.append(backward_info_jj_nudged)
-            backward_info_list_free.append(backward_info_jj_free)
+            backward_info_list.append(backward_info_jj)
+
+            return forward_info_list, backward_info_list
+
+    # def layerwise_forward_and_backward_correlative_information(self, layers_free, layers_nudged):
+    #     Wff = self.Wff
+    #     Wfb = self.Wfb
+    #     Rfree = self.Rfree 
+    #     Rnudged = self.Rnudged
+    #     epsilon = self.epsilon
+    #     one_over_epsilon = self.one_over_epsilon
+    #     device = self.device
+    #     architecture = self.architecture
+
+    #     # epsilon_tensor = torch.Tensor([epsilon]).to(device)
+    #     batch_size = layers_free[0].shape[1]
+    #     batch_size_sqrt_root = np.sqrt(batch_size)
+    #     log_epsilon = np.log(epsilon)
+
+    #     forward_info_list_free = []
+    #     backward_info_list_free = []
+    #     forward_info_list_nudged = []
+    #     backward_info_list_nudged = []
+
+    #     # for jj in range(len(architecture) - 2):
+    #     #     Identity_Matrix = epsilon * torch.eye(*Rnudged[jj + 1]['weight'].shape).to(device)
+    #     #     forward_info_jj_nudged = (torch.logdet(Rnudged[jj + 1]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(layers_nudged[jj + 2] - Wff[jj + 1]['weight'] @ layers_nudged[jj + 1] - Wff[jj + 1]['bias']) ** 2 + layers_nudged[jj + 2].shape[0] * log_epsilon).item()
+    #     #     forward_info_jj_free = (torch.logdet(Rfree[jj + 1]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(layers_free[jj + 2] - Wff[jj + 1]['weight'] @ layers_free[jj + 1] - Wff[jj + 1]['bias']) ** 2 + layers_free[jj + 2].shape[0] * log_epsilon).item()
+
+    #     #     forward_info_list_nudged.append(forward_info_jj_nudged)
+    #     #     forward_info_list_free.append(forward_info_jj_free)
+
+    #     # for jj in range(len(architecture) - 2):
+    #     #     Identity_Matrix = epsilon * torch.eye(*Rnudged[jj]['weight'].shape).to(device)
+    #     #     backward_info_jj_nudged = (torch.logdet(Rnudged[jj]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_nudged[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_nudged[jj + 2]) ** 2 + (layers_nudged[jj + 1].shape[0] + 1) * log_epsilon).item()
+    #     #     backward_info_jj_free = (torch.logdet(Rfree[jj]['weight'] + Identity_Matrix) - batch_size_sqrt_root * one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_free[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_free[jj + 2]) ** 2 + (layers_free[jj + 1].shape[0] + 1) * log_epsilon).item()
+
+    #     #     backward_info_list_nudged.append(backward_info_jj_nudged)
+    #     #     backward_info_list_free.append(backward_info_jj_free)
+    #     for jj in range(len(architecture) - 2):
+    #         Identity_Matrix = epsilon * torch.eye(*Rnudged[jj + 1]['weight'].shape).to(device)
+    #         forward_info_jj_nudged = (torch.logdet(Rnudged[jj + 1]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(layers_nudged[jj + 2] - Wff[jj + 1]['weight'] @ layers_nudged[jj + 1] - Wff[jj + 1]['bias']) ** 2 - layers_nudged[jj + 2].shape[0] * log_epsilon)).item()
+    #         forward_info_jj_free = (torch.logdet(Rfree[jj + 1]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(layers_free[jj + 2] - Wff[jj + 1]['weight'] @ layers_free[jj + 1] - Wff[jj + 1]['bias']) ** 2 - layers_free[jj + 2].shape[0] * log_epsilon)).item()
+
+    #         forward_info_list_nudged.append(forward_info_jj_nudged)
+    #         forward_info_list_free.append(forward_info_jj_free)
+
+    #     for jj in range(len(architecture) - 2):
+    #         Identity_Matrix = epsilon * torch.eye(*Rnudged[jj]['weight'].shape).to(device)
+    #         backward_info_jj_nudged = (torch.logdet(Rnudged[jj]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_nudged[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_nudged[jj + 2]) ** 2 - (layers_nudged[jj + 1].shape[0] + 1) * log_epsilon)).item()
+    #         backward_info_jj_free = (torch.logdet(Rfree[jj]['weight'] + Identity_Matrix) - (1 / batch_size) * (one_over_epsilon * torch.norm(self.append_ones_row_vector_to_tensor(layers_free[jj + 1]) - Wfb[jj + 1]['weight'] @ layers_free[jj + 2]) ** 2 - (layers_free[jj + 1].shape[0] + 1) * log_epsilon)).item()
+
+    #         backward_info_list_nudged.append(backward_info_jj_nudged)
+    #         backward_info_list_free.append(backward_info_jj_free)
             
-        return forward_info_list_free, backward_info_list_free, forward_info_list_nudged, backward_info_list_nudged
+    #     return forward_info_list_free, backward_info_list_free, forward_info_list_nudged, backward_info_list_nudged
+    
     ###############################################################
     ############### NEURAL DYNAMICS ALGORITHMS ####################
     ###############################################################
     def run_neural_dynamics_hopfield(self, x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, 
                                      lr_rule = "constant", lr_decay_multiplier = 0.1, 
-                                     neural_dynamic_iterations = 10, beta = 1):
+                                     neural_dynamic_iterations = 10, beta = 1, take_debug_logs = False):
+
+        # if take_debug_logs:
+        if beta != 0:
+            phase = "free"
+        else:
+            phase = "nudged"
+        forward_info = []
+        backward_info = []
+            
         Wff = self.Wff
         Wfb = self.Wfb
         B = self.B
@@ -235,8 +301,13 @@ class ContrastiveCorInfoMaxHopfield():
                         neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                         neurons[jj] = self.activation(neurons_intermediate[jj])
                     layers = [x] + neurons  # concatenate the input to other layers
+
+            if take_debug_logs:
+                info_measures = self.layerwise_forward_and_backward_correlative_information(layers, phase)
+                forward_info.append(np.sum(info_measures[0]))
+                backward_info.append(np.sum(info_measures[1]))
                     # neurons[neuron_iter] = self.activation(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter])
-        return neurons
+        return neurons, forward_info, backward_info
 
     ###############################################################
     ############### BATCH STEP ALGORITHMS #########################
@@ -255,28 +326,36 @@ class ContrastiveCorInfoMaxHopfield():
         # neurons = self.init_neurons(x.size(1), device = self.device)
         neurons = self.init_neurons(x.size(1), device = self.device)
 
-        neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                                    neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0)
+        (neurons,
+         free_forward_info,
+         free_backward_info
+        ) = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                             neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0, take_debug_logs)
+
         
         neurons1 = neurons.copy()
         layers_free_ = [x] + neurons1
 
         ### Lateral Weight Updates
         for jj in range(len(B)):
-            z = B[jj]['weight'] @ self.append_ones_row_vector_to_tensor(neurons1[jj])
-            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
-            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+            # z = B[jj]['weight'] @ self.append_ones_row_vector_to_tensor(neurons1[jj])
+            # B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            # B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
 
             Rfree[jj]['weight'] = lambda_ * Rfree[jj]['weight'] + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons1[jj].T, neurons1[jj].T), axis = 0)
 
-        neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                                    neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta)
+        (neurons,
+         nudged_forward_info,
+         nudged_backward_info 
+        ) = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                              neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta, take_debug_logs)
+
 
         neurons2 = neurons.copy()
 
         if use_three_phase:
-            neurons = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
-                                                        neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, -beta)
+            neurons, _, _ = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                                                              neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, -beta, take_debug_logs)
 
             neurons3 = neurons.copy()
 
@@ -304,9 +383,9 @@ class ContrastiveCorInfoMaxHopfield():
 
         ### Lateral Weight Updates
         for jj in range(len(B)):
-            # z = B[jj]['weight'] @ self.append_ones_row_vector_to_tensor(neurons2[jj])
-            # B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
-            # B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+            z = B[jj]['weight'] @ self.append_ones_row_vector_to_tensor(neurons2[jj])
+            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
 
             Rnudged[jj]['weight'] = lambda_ * Rnudged[jj]['weight'] + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons2[jj].T, neurons2[jj].T), axis = 0)
                  
@@ -323,17 +402,29 @@ class ContrastiveCorInfoMaxHopfield():
             
             self.forward_backward_angles.append(instant_forward_backward_angles)
 
+            # (forward_info_list_free, 
+            #  backward_info_list_free, 
+            #  forward_info_list_nudged, 
+            #  backward_info_list_nudged
+            # ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, layers_nudged)
+
             (forward_info_list_free, 
              backward_info_list_free, 
-             forward_info_list_nudged, 
-             backward_info_list_nudged
-            ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, layers_nudged)
+            ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, "free")
+
+            (forward_info_list_nudged, 
+             backward_info_list_nudged, 
+            ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, "nudged")
 
             self.layerwise_forward_corinfo_list_free.append(forward_info_list_free)
             self.layerwise_backward_corinfo_list_free.append(backward_info_list_free)
             self.layerwise_forward_corinfo_list_nudged.append(forward_info_list_nudged)
             self.layerwise_backward_corinfo_list_nudged.append(backward_info_list_nudged)
 
+            self.neural_dynamics_free_forward_info_list.append(free_forward_info)
+            self.neural_dynamics_free_backward_info_list.append(free_backward_info)
+            self.neural_dynamics_nudged_forward_info_list.append(nudged_forward_info)
+            self.neural_dynamics_nudged_backward_info_list.append(nudged_backward_info)
         return neurons
 
 
