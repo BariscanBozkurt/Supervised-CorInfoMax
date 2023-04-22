@@ -1,8 +1,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from IPython.display import Math, display
+import pandas as pd
+from sklearn.metrics import mean_absolute_error as mae
+from sklearn.metrics import mean_squared_error as mse
+########### LATEX Style Display Matrix ###############
+def display_matrix(array):
+    """Display given numpy array with Latex format in Jupyter Notebook.
+    Args:
+        array (numpy array): Array to be displayed
+    """
+    data = ""
+    for line in array:
+        if len(line) == 1:
+            data += " %.3f &" % line + r" \\\n"
+            continue
+        for element in line:
+            data += " %.3f &" % element
+        data += r" \\" + "\n"
+    display(Math("\\begin{bmatrix} \n%s\\end{bmatrix}" % data))
 
-# compute the median of each column
-# compute the median of each column
 def med(data):
     median = np.zeros(data.shape[1])
     for i in range(0, len(median)):
@@ -10,17 +27,17 @@ def med(data):
     return median
 
 def perc(data):
-    # Quartiles are computed with numpy in the same way as the median, but using the function percentile.
-    median = np.zeros(data.shape[1])
+    # Quartiles are computed with numpy in the same way as the mean, but using the function percentile.
+    mean = np.zeros(data.shape[1])
     perc_25 = np.zeros(data.shape[1])
     perc_75 = np.zeros(data.shape[1])
     std = np.zeros(data.shape[1])
-    for i in range(0, len(median)):
-        median[i] = np.median(data[:, i])
+    for i in range(0, len(mean)):
+        mean[i] = np.mean(data[:, i])
         perc_25[i] = np.percentile(data[:, i], 25)
         perc_75[i] = np.percentile(data[:, i], 75)
         std[i] = np.std(data[:,i])
-    return median, perc_25, perc_75, std
+    return mean, perc_25, perc_75, std
 
 def plot_convergence_plot(metric, xlabel = '', ylabel = '', title = '', figsize = (12,8), fontsize = 15, linewidth = 3, colorcode = '#006BB2', saveplot = False, savingname = 'MetricPlot'):
     
@@ -35,7 +52,6 @@ def plot_convergence_plot(metric, xlabel = '', ylabel = '', title = '', figsize 
     plt.draw()
     if saveplot:
         plt.savefig(savingname + '.pdf', format  ='pdf', dpi = 1500)
-
 
 def plot_convergence_plot_for_multiple_run(metric, xlabel = '', ylabel = '', figsize = (12,8), fontsize = 15, 
                                            linewidth = 3, colorcode = '#006BB2', saveplot = False, savingname = 'MetricPlot'):
@@ -75,7 +91,6 @@ def plot_convergence_plot_for_multiple_run(metric, xlabel = '', ylabel = '', fig
     if saveplot:
         plt.savefig(savingname + '.pdf', format  ='pdf', dpi = 1500)
 
-
 def plot_regression_quality(target, pred, xlabel ='Target', ylabel = 'Predicted',figsize = (15,9), label_fontsizes = 30, tick_label_fontsizes = 30):
     """
     target : Given target values for the regression problem. Can be pandas dataframe or numpy array.
@@ -109,7 +124,6 @@ def plot_regression_quality(target, pred, xlabel ='Target', ylabel = 'Predicted'
     plt.yticks(fontsize=tick_label_fontsizes)
     plt.grid()
     plt.show()
-
 
 def SetPlotRC():
     #If fonttype = 1 doesn't work with LaTeX, try fonttype 42.
