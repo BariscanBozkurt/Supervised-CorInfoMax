@@ -30,17 +30,17 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CSM_FashionMNIST.pkl"
+pickle_name_for_results = "simulation_results_CSM_MNIST_V3.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), 
                                             torchvision.transforms.Normalize(mean=(0.0,), std=(1.0,))])
 
-mnist_dset_train = torchvision.datasets.FashionMNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
+mnist_dset_train = torchvision.datasets.MNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
 train_loader = torch.utils.data.DataLoader(mnist_dset_train, batch_size=20, shuffle=True, num_workers=0)
 
-mnist_dset_test = torchvision.datasets.FashionMNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
+mnist_dset_test = torchvision.datasets.MNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
 test_loader = torch.utils.data.DataLoader(mnist_dset_test, batch_size=20, shuffle=False, num_workers=0)
 
 activation = hard_sigmoid
@@ -51,8 +51,8 @@ RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperp
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
 
-alphas_W_list = [[0.1, 0.06]]
-alphas_M_list = [[-0.002]]
+alphas_W_list = [[0.5, 0.375], [0.4, 0.275]]
+alphas_M_list = [[-0.01]]
 T1_list = [20]
 T2_list = [4]
 neural_lr_list = [0.5]

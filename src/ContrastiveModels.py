@@ -259,13 +259,14 @@ class CSM(torch.nn.Module):
         
         delta_phi = (phi_2 - phi_1)/(beta_2 - beta_1)        
         delta_phi.backward() # p.grad = -(d_Phi_2/dp - d_Phi_1/dp)/(beta_2 - beta_1) ----> dL/dp  by the theorem
-        # # Contrastive Similarity Matching Lateral Weight Update additional term is added below (before optimizer step)
-        # with torch.no_grad(): # Check line 306 in https://github.com/Pehlevan-Group/Supervised-Similarity-Matching/blob/master/Main/model_wlat_smep_mod.py
-        #     for kk in range(len(self.M)):
-        #         Mweight = self.M[kk].weight.data
-        #         self.M[kk].weight.data = Mweight + (alphas_M[kk]) * Mweight/(2 * np.abs(beta_2))
-        self.optimizer.step()
 
+        self.optimizer.step()
+        # Contrastive Similarity Matching Lateral Weight Update additional term is added below (before optimizer step)
+        with torch.no_grad(): # Check line 306 in https://github.com/Pehlevan-Group/Supervised-Similarity-Matching/blob/master/Main/model_wlat_smep_mod.py
+            for kk in range(len(self.M)):
+                Mweight = self.M[kk].weight.data
+                self.M[kk].weight.data = Mweight + (alphas_M[kk]) * Mweight/(2 * np.abs(beta_2))
+                
         for idx in range(len(self.M)):
             self.M_copy[idx].weight.data = self.M[idx].weight.data
             self.M_copy[idx].weight.data.requires_grad_(False)
