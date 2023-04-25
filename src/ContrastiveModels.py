@@ -202,7 +202,6 @@ class CSM(torch.nn.Module):
         
         return phi
     
-    
     def forward(self, x, y, neurons, T, neural_lr = 0.5, beta=0.0, criterion=torch.nn.MSELoss(reduction='none'), check_thm=False):
         # Run T steps of the dynamics for static input x, label y, neurons and nudging factor beta.
         not_mse = (criterion.__class__.__name__.find('MSE')==-1)
@@ -241,7 +240,6 @@ class CSM(torch.nn.Module):
         for size in self.architecture[1:]:  
             append(torch.zeros((mbs, size), requires_grad=True, device=device))
         return neurons
-
 
     def compute_syn_grads(self, x, y, neurons_1, neurons_2, betas, alphas_M, criterion, check_thm=False):
         # Computing the EP update given two steady states neurons_1 and neurons_2, static input x, label y
