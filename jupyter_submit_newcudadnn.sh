@@ -33,7 +33,7 @@
 #SBATCH --partition=ai
 #SBATCH --account=ai
 #SBATCH --qos=ai
-#SBATCH --gres=gpu:tesla_t4:1
+#SBATCH --gres=gpu:tesla_v100:1
 ##SBATCH --constraint=tesla_t4
 #SBATCH  --mem=40GB
 #SBATCH --time=24:00:00
