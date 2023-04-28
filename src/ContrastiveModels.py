@@ -591,7 +591,6 @@ class ContrastiveCorInfoMaxHopfield():
         neurons1 = neurons.copy()
         layers_free_ = [x] + neurons1
 
-        ### Lateral Weight Updates
         for jj in range(len(B)):
             # z = B[jj]['weight'] @ self.append_ones_row_vector_to_tensor(neurons1[jj])
             # B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
