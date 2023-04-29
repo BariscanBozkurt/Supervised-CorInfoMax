@@ -267,6 +267,99 @@ def evaluateContrastiveCorInfoMaxHopfield(model, loader, hopfield_g, neural_lr_s
         print(phase+' accuracy :\t', acc)   
     return acc
 
+def evaluateContrastiveCorInfoMaxHopfieldSparse(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr,
+                                                neural_lr_rule, neural_lr_decay_multiplier,
+                                                T, device, printing = True):
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = 0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
+def topk_accuracy(output, target, topk=(1,)):
+    """
+    Computes the accuracy over the k top predictions for the specified values of k
+    Modified from: https://github.com/EPFL-LCN/pub-illing2021-neurips/blob/b66061eddaec9d9f41213c3640d3f0961d13cc7b/vision/CLAPPVision/utils/utils.py
+    output shape = (number of classes, batch size)
+    target size = (batch size)
+    """
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 0, True, True)
+        
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+        correct_k_list = []
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            correct_k_list.append(correct_k.item())
+            res.append(correct_k.mul(1.0 / batch_size).item())
+        return np.array(res), np.array(correct_k_list)
+
+def evaluateContrastiveCorInfoMaxHopfield_topk( model, loader, hopfield_g, neural_lr_start, neural_lr_stop, 
+                                                neural_lr_rule, neural_lr_decay_multiplier,
+                                                T, device, topk = (1,), printing = True):
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = np.zeros(len(topk))
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        correct += topk_accuracy(neurons[-1], y, topk)[1]
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
+def evaluateContrastiveCorInfoMaxHopfieldSparse_topk(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr,
+                                                     neural_lr_rule, neural_lr_decay_multiplier,
+                                                     T, device, topk = (1,), printing = True):
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = np.zeros(len(topk))
+    phase = 'Train' if loader.dataset.train else 'Test'
+    
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        # pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        correct += topk_accuracy(neurons[-1], y, topk)[1]
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+    return acc
+
 def evaluateCorInfoMax(model, loader, neural_lr, T, device, printing = True):
     # Evaluate the model on a dataloader with T steps for the dynamics
     #model.eval()

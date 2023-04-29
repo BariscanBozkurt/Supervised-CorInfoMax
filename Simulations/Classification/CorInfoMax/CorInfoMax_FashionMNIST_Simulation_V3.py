@@ -30,17 +30,17 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_V4.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_FashionMNIST_V3.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), 
                                             torchvision.transforms.Normalize(mean=(0.0,), std=(1.0,))])
 
-mnist_dset_train = torchvision.datasets.MNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
+mnist_dset_train = torchvision.datasets.FashionMNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
 train_loader = torch.utils.data.DataLoader(mnist_dset_train, batch_size=20, shuffle=True, num_workers=0)
 
-mnist_dset_test = torchvision.datasets.MNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
+mnist_dset_test = torchvision.datasets.FashionMNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
 test_loader = torch.utils.data.DataLoader(mnist_dset_test, batch_size=20, shuffle=False, num_workers=0)
 
 activation = hard_sigmoid
@@ -53,15 +53,15 @@ beta = 1
 lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-lr_start_list = [{'ff' : np.array([0.75, 0.5]), 'fb': np.array([0.15, 0.15])}]
-lr_decay_multiplier_list = [0.95, 0.99]
-neural_lr_start_list = [0.05]
+lr_start_list = [{'ff' : np.array([0.3, 0.22]), 'fb': np.array([np.nan, 0.07])}, {'ff' : np.array([0.25, 0.15]), 'fb': np.array([0.15, 0.09])}]
+lr_decay_multiplier_list = [0.95]
+neural_lr_start_list = [0.07, 0.05]
 neural_lr_stop = 0.001
-neural_lr_rule_list = ["divide_by_slow_loop_index", "constant"]
+neural_lr_rule_list = ["divide_by_slow_loop_index"]
 neural_lr_decay_multiplier = 0.01
 neural_dynamic_iterations_nudged = 10
 neural_dynamic_iterations_free_list = [30]
-hopfield_g_list = [0.5, 0.2]
+hopfield_g_list = [0.3]
 use_random_sign_beta = True
 use_three_phase_list = [False]
 
@@ -89,10 +89,13 @@ for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynam
         debug_iteration_point = 1
 
         for epoch_ in range(n_epochs):
-            if epoch_ < 25:
+            if epoch_ < 20:
                 lr = {'ff' : lr_start['ff'] * (lr_decay_multiplier)**epoch_, 'fb' : lr_start['fb'] * (lr_decay_multiplier)**epoch_}
-            else:
+            elif (epoch_ >= 20) & (epoch_ < 25):
                 lr = {'ff' : lr_start['ff'] * (0.9)**epoch_, 'fb' : lr_start['fb'] * (0.9)**epoch_}
+            elif epoch_ >= 25:
+                lr = {'ff' : lr_start['ff'] * (0.8)**epoch_, 'fb' : lr_start['fb'] * (0.8)**epoch_}
+
             for idx, (x, y) in tqdm(enumerate(train_loader)):
                 x, y = x.to(device), y.to(device)
                 x = x.view(x.size(0),-1).T

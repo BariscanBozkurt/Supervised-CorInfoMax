@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_V4.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_V5.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -53,7 +53,7 @@ beta = 1
 lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-lr_start_list = [{'ff' : np.array([0.75, 0.5]), 'fb': np.array([0.15, 0.15])}]
+lr_start_list = [{'ff' : np.array([1.0, 0.7]), 'fb': np.array([0.15, 0.15])}]
 lr_decay_multiplier_list = [0.95, 0.99]
 neural_lr_start_list = [0.05]
 neural_lr_stop = 0.001
@@ -89,7 +89,7 @@ for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynam
         debug_iteration_point = 1
 
         for epoch_ in range(n_epochs):
-            if epoch_ < 25:
+            if epoch_ < 15:
                 lr = {'ff' : lr_start['ff'] * (lr_decay_multiplier)**epoch_, 'fb' : lr_start['fb'] * (lr_decay_multiplier)**epoch_}
             else:
                 lr = {'ff' : lr_start['ff'] * (0.9)**epoch_, 'fb' : lr_start['fb'] * (0.9)**epoch_}
