@@ -267,7 +267,7 @@ def evaluateContrastiveCorInfoMaxHopfield(model, loader, hopfield_g, neural_lr_s
         print(phase+' accuracy :\t', acc)   
     return acc
 
-def evaluateContrastiveCorInfoMaxHopfieldSparse(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr,
+def evaluateContrastiveCorInfoMaxHopfieldSparse(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list,
                                                 neural_lr_rule, neural_lr_decay_multiplier,
                                                 T, device, printing = True):
     # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
@@ -281,7 +281,7 @@ def evaluateContrastiveCorInfoMaxHopfieldSparse(model, loader, hopfield_g, neura
         neurons = model.init_neurons(x.size(1), device = model.device)
         
         # dynamics for T time steps
-        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
         
         pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
         correct += (y == pred).sum().item()
