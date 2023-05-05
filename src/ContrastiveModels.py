@@ -640,7 +640,10 @@ class ContrastiveCorInfoMaxHopfieldSparse(ContrastiveCorInfoMaxHopfield):
                                      lr_rule = "constant", lr_decay_multiplier = 0.1, 
                                      neural_dynamic_iterations = 10, beta = 1, take_debug_logs = False):
         mbs = x.size(1)
-        STLAMBD_list = [torch.zeros(1, mbs).to(self.device) for _ in range(len(neurons))]
+        if beta == 0:
+            STLAMBD_list = [torch.zeros(1, mbs).to(self.device) for _ in range(len(neurons))]
+        else:
+            STLAMBD_list = self.STLAMBD_list
         STLAMBD_list_intermediate = self.copy_neurons(STLAMBD_list)
         # if take_debug_logs:
         if beta != 0:
@@ -671,32 +674,38 @@ class ContrastiveCorInfoMaxHopfieldSparse(ContrastiveCorInfoMaxHopfield):
             with torch.no_grad():       
                 for jj in range(len(neurons)):
                     if jj == len(neurons) - 1:
-                        # print("here if")
                         basal_voltage = Wff[jj]['weight'] @ layers[jj]
-                        apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
-                        gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                        # apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
+                        # gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
                         
                         if (jj + 1) in self.sparse_layers:
-                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons - STLAMBD_list[jj]
+                            apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - STLAMBD_list[jj] - beta * (layers[jj + 1] - y)
+                            gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
                             neurons[jj] = F.relu(neurons_intermediate[jj])
-                            # STLAMBD_list[jj] = F.relu(STLAMBD_list[jj] + STlambda_lr_list[jj] * (torch.sum(neurons[jj], 0).view(1, -1) - 1))
+                            
                             STLAMBD_list_intermediate[jj] = STLAMBD_list_intermediate[jj] + STlambda_lr_list[jj] * (-STLAMBD_list_intermediate[jj] + (torch.sum(neurons[jj], 0).view(1, -1) - 1) + STLAMBD_list[jj])
                             STLAMBD_list[jj] = F.relu(STLAMBD_list_intermediate[jj])
                         else:
+                            apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
+                            gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
                             neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
                             neurons[jj] = self.activation(neurons_intermediate[jj])
                     else:
-                        # print("here else")
                         basal_voltage = Wff[jj]['weight'] @ layers[jj] 
-                        apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
-                        gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                        # apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
+                        # gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
                         
                         if (jj + 1) in self.sparse_layers:
-                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons - STLAMBD_list[jj]
+                            apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) - epsilon * STLAMBD_list[jj]#+ Wfb[jj + 1]['bias']
+                            gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                             neurons[jj] = F.relu(neurons_intermediate[jj])
                             STLAMBD_list_intermediate[jj] = STLAMBD_list_intermediate[jj] + STlambda_lr_list[jj] * (-STLAMBD_list_intermediate[jj] + (torch.sum(neurons[jj], 0).view(1, -1) - 1) + STLAMBD_list[jj])
                             STLAMBD_list[jj] = F.relu(STLAMBD_list_intermediate[jj])
                         else:
+                            apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
+                            gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
                             neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
                             neurons[jj] = self.activation(neurons_intermediate[jj])
                         # neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
@@ -708,6 +717,7 @@ class ContrastiveCorInfoMaxHopfieldSparse(ContrastiveCorInfoMaxHopfield):
                 forward_info.append(np.sum(info_measures[0]))
                 backward_info.append(np.sum(info_measures[1]))
                     # neurons[neuron_iter] = self.activation(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter])
+        self.STLAMBD_list = STLAMBD_list
         return neurons, forward_info, backward_info
 
     ###############################################################

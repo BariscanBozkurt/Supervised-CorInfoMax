@@ -360,6 +360,132 @@ def evaluateContrastiveCorInfoMaxHopfieldSparse_topk(model, loader, hopfield_g, 
         print(phase+' accuracy :\t', acc)   
     return acc
 
+def columnwise_sparsity(x, threshold = 0.01):
+    return (x < threshold).sum(0) / x.shape[0]
+
+def evaluateContrastiveCorInfoMaxHopfieldV2(model, loader, hopfield_g, neural_lr_start, neural_lr_stop,
+                                                neural_lr_rule, neural_lr_decay_multiplier,
+                                                T, device, printing = True, check_sparsity = True):
+    """
+    It is the same as evaluateContrastiveCorInfoMaxHopfield, except that it also checks the
+    sparsity of the representations in the layers.
+    """
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = 0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    if check_sparsity:
+        layer_sparsity = [[] for _ in range(len(model.architecture) - 1)]
+        
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        if check_sparsity:
+            for jj in range(len(neurons)):
+                layer_sparsity[jj].extend(list(torch2numpy(columnwise_sparsity(neurons[jj]))))
+                
+        correct += topk_accuracy(neurons[-1], y, topk)[1]
+
+    acc = correct/len(loader.dataset) 
+    if check_sparsity:
+        overall_layer_sparsity = np.array(layer_sparsity).mean(1)
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+        print("Sparsity for layers: ", overall_layer_sparsity)
+    
+    if check_sparsity:
+        return acc, overall_layer_sparsity
+    else:
+        return acc
+
+def evaluateContrastiveCorInfoMaxHopfieldSparseV2(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list,
+                                                neural_lr_rule, neural_lr_decay_multiplier,
+                                                T, device, printing = True, check_sparsity = True):
+    """
+    It is the same as evaluateContrastiveCorInfoMaxHopfieldSparse, except that it also checks the
+    sparsity of the representations in the layers.
+    """
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = 0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    if check_sparsity:
+        layer_sparsity = [[] for _ in range(len(model.architecture) - 1)]
+        
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        if check_sparsity:
+            for jj in range(len(neurons)):
+                layer_sparsity[jj].extend(list(torch2numpy(columnwise_sparsity(neurons[jj]))))
+                
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        correct += (y == pred).sum().item()
+
+    acc = correct/len(loader.dataset) 
+    if check_sparsity:
+        overall_layer_sparsity = np.array(layer_sparsity).mean(1)
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+        print("Sparsity for layers: ", overall_layer_sparsity)
+    
+    if check_sparsity:
+        return acc, overall_layer_sparsity
+    else:
+        return acc
+
+def evaluateContrastiveCorInfoMaxHopfieldSparseV2_topk(model, loader, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list,
+                                                neural_lr_rule, neural_lr_decay_multiplier,
+                                                T, device, topk = (1,), printing = True, check_sparsity = True):
+    """
+    It is the same as evaluateContrastiveCorInfoMaxHopfieldSparse_topk, except that it also checks the
+    sparsity of the representations in the layers.
+    """
+    # Evaluate the Contrastive CorInfoMax Hopfield model on a dataloader with T steps for the dynamics for the classification task
+    correct = 0
+    phase = 'Train' if loader.dataset.train else 'Test'
+    if check_sparsity:
+        layer_sparsity = [[] for _ in range(len(model.architecture) - 1)]
+        
+    for x, y in loader:
+        x = x.view(x.size(0),-1).to(device).T
+        y = y.to(device)
+        
+        neurons = model.init_neurons(x.size(1), device = model.device)
+        
+        # dynamics for T time steps
+        neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
+        
+        if check_sparsity:
+            for jj in range(len(neurons)):
+                layer_sparsity[jj].extend(list(torch2numpy(columnwise_sparsity(neurons[jj]))))
+                
+        correct += topk_accuracy(neurons[-1], y, topk)[1]
+
+    acc = correct/len(loader.dataset) 
+    if check_sparsity:
+        overall_layer_sparsity = np.array(layer_sparsity).mean(1)
+    if printing:
+        print(phase+' accuracy :\t', acc)   
+        print("Sparsity for layers: ", overall_layer_sparsity)
+    
+    if check_sparsity:
+        return acc, overall_layer_sparsity
+    else:
+        return acc
+
+
+### Deprecated
 def evaluateCorInfoMax(model, loader, neural_lr, T, device, printing = True):
     # Evaluate the model on a dataloader with T steps for the dynamics
     #model.eval()
