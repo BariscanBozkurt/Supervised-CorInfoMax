@@ -462,14 +462,14 @@ class ContrastiveCorInfoMaxHopfield():
                         
                         basal_voltage = Wff[jj]['weight'] @ layers[jj] #+ Wff[jj]['bias']
                         apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
-                        gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                        gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) 
                         neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                         neurons[jj] = self.activation(neurons_intermediate[jj])
                         
                     else:
                         
                         basal_voltage = Wff[jj]['weight'] @ layers[jj] #+ Wff[jj]['bias']
-                        apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
+                        apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) 
                         gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
                         neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
                         neurons[jj] = self.activation(neurons_intermediate[jj])
