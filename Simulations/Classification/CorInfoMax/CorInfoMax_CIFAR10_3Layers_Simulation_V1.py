@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_CIFAR10.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_CIFAR10_3Layers_V1.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -45,16 +45,16 @@ cifar_dset_test = torchvision.datasets.CIFAR10('../../../data', train=False, tra
 test_loader = torch.utils.data.DataLoader(cifar_dset_test, batch_size=20, shuffle=False, num_workers=0)
 
 activation = hard_sigmoid
-architecture = [int(32*32*3), 1000, 10]
+architecture = [int(32*32*3), 1000, 500, 10]
 
 RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperparams', 'Trn_ACC_list', 'Tst_ACC_list', 'forward_backward_weight_angle_list'])
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
 beta = 1
-lambda_list = [0.99999, 0.99995]
+lambda_list = [0.99999]
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-lr_start_list = [{'ff' : np.array([0.07, 0.03]), 'fb': np.array([np.nan, 0.05])}, {'ff' : np.array([0.08, 0.04]), 'fb': np.array([np.nan, 0.04])}]
+lr_start_list = [{'ff': np.array([0.11, 0.06, 0.035]), 'fb': np.array([ np.nan, 0.045, 0.015])}, {'ff': np.array([0.13, 0.07, 0.035]), 'fb': np.array([ np.nan, 0.045, 0.012])}]
 lr_decay_multiplier_list = [0.95]
 neural_lr_start_list = [0.05]
 neural_lr_stop = 0.001

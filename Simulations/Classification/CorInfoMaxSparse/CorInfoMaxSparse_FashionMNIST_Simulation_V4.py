@@ -16,7 +16,7 @@ import time
 import math
 import sys
 sys.path.append("./src")
-from ContrastiveModels import ContrastiveCorInfoMaxHopfield
+from ContrastiveModels import ContrastiveCorInfoMaxHopfieldSparse
 from torch_utils import *
 
 import warnings
@@ -30,17 +30,17 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_V2.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMaxSparse_FashionMNIST_V4.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), 
                                             torchvision.transforms.Normalize(mean=(0.0,), std=(1.0,))])
 
-mnist_dset_train = torchvision.datasets.MNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
+mnist_dset_train = torchvision.datasets.FashionMNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
 train_loader = torch.utils.data.DataLoader(mnist_dset_train, batch_size=20, shuffle=True, num_workers=0)
 
-mnist_dset_test = torchvision.datasets.MNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
+mnist_dset_test = torchvision.datasets.FashionMNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
 test_loader = torch.utils.data.DataLoader(mnist_dset_test, batch_size=20, shuffle=False, num_workers=0)
 
 activation = hard_sigmoid
@@ -50,21 +50,22 @@ RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperp
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
 beta = 1
-lambda_ = 0.99995
+lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-lr_start_list = [{'ff' : np.array([0.25, 0.12]), 'fb': np.array([0.15, 0.1])}, {'ff' : np.array([0.2, 0.1]), 'fb': np.array([0.1, 0.05])}]
-lr_decay_multiplier_list = [0.95, 0.99]
-neural_lr_start_list = [0.1, 0.05]
+lr_start_list = [{'ff' : np.array([0.35, 0.22]), 'fb': np.array([np.nan, 0.06])}]
+lr_decay_multiplier_list = [0.95]
+neural_lr_start_list = [0.05]
 neural_lr_stop = 0.001
-neural_lr_rule_list = ["constant", "divide_by_loop_index"]
+neural_lr_rule_list = ["divide_by_slow_loop_index"]
 neural_lr_decay_multiplier = 0.01
-neural_dynamic_iterations_nudged = 10
-neural_dynamic_iterations_free_list = [30, 20]
-hopfield_g_list = [0.1, 0.05]
+neural_dynamic_iterations_nudged = 5
+neural_dynamic_iterations_free_list = [20]
+hopfield_g_list = [0.3, 0.2]
 use_random_sign_beta = True
-use_three_phase_list = [False, True]
-
+use_three_phase_list = [False]
+STlambda_lr_list = [1e-6, 0.01]
+sparse_layers = [1, 2]
 n_epochs = 50
 seed_list = [10*j for j in range(10)]
 
@@ -84,12 +85,16 @@ for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynam
 
         trn_acc_list = []
         tst_acc_list = []
-        model = ContrastiveCorInfoMaxHopfield(architecture = architecture, lambda_ = lambda_, 
-                                              epsilon = epsilon, activation = activation)
+        model = ContrastiveCorInfoMaxHopfieldSparse(architecture = architecture, lambda_ = lambda_, 
+                                                    epsilon = epsilon, activation = activation, 
+                                                    sparse_layers = sparse_layers)
         debug_iteration_point = 1
 
         for epoch_ in range(n_epochs):
-            lr = {'ff' : lr_start['ff'] * (lr_decay_multiplier)**epoch_, 'fb' : lr_start['fb'] * (lr_decay_multiplier)**epoch_}
+            if epoch_ < 11:
+                lr = {'ff' : lr_start['ff'] * (lr_decay_multiplier)**epoch_, 'fb' : lr_start['fb'] * (lr_decay_multiplier)**epoch_}
+            else:
+                lr = {'ff' : lr_start['ff'] * (0.9)**epoch_, 'fb' : lr_start['fb'] * (0.9)**epoch_}
             for idx, (x, y) in tqdm(enumerate(train_loader)):
                 x, y = x.to(device), y.to(device)
                 x = x.view(x.size(0),-1).T
@@ -99,22 +104,22 @@ for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynam
                     rnd_sgn = 2*np.random.randint(2) - 1
                     beta = rnd_sgn*beta
                     
-                neurons = model.batch_step_hopfield( x, y_one_hot, hopfield_g, 
-                                                    lr, neural_lr_start, neural_lr_stop, neural_lr_rule, 
+                neurons = model.batch_step_hopfield(x, y_one_hot, hopfield_g, 
+                                                    lr, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
                                                     neural_lr_decay_multiplier, neural_dynamic_iterations_free,
                                                     neural_dynamic_iterations_nudged, beta, 
                                                     use_three_phase, take_debug_logs_)
             
-            trn_acc = evaluateContrastiveCorInfoMaxHopfield(model, train_loader, hopfield_g, neural_lr_start, 
-                                                            neural_lr_stop, neural_lr_rule, 
-                                                            neural_lr_decay_multiplier, 
-                                                            neural_dynamic_iterations_free, 
-                                                            device, printing = False)
-            tst_acc = evaluateContrastiveCorInfoMaxHopfield(model, test_loader, hopfield_g, neural_lr_start, 
-                                                            neural_lr_stop, neural_lr_rule, 
-                                                            neural_lr_decay_multiplier, 
-                                                            neural_dynamic_iterations_free, 
-                                                            device, printing = False)
+            trn_acc = evaluateContrastiveCorInfoMaxHopfieldSparse(  model, train_loader, hopfield_g, neural_lr_start, 
+                                                                    neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
+                                                                    neural_lr_decay_multiplier, 
+                                                                    neural_dynamic_iterations_free, 
+                                                                    device, printing = False)
+            tst_acc = evaluateContrastiveCorInfoMaxHopfieldSparse(  model, test_loader, hopfield_g, neural_lr_start, 
+                                                                    neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
+                                                                    neural_lr_decay_multiplier, 
+                                                                    neural_dynamic_iterations_free, 
+                                                                    device, printing = False)
             trn_acc_list.append(trn_acc)
             tst_acc_list.append(tst_acc)
 
