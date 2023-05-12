@@ -31,6 +31,7 @@ torch_utils.py          | Some Pytorch utilization functions such as activation 
 visualization.py        | Some visuzalization helper functions.
 
 ## Notebook_Examples
+Under this folder, you can find some jupyter notebook examples of our proposed framework in addition to examples of the algorithms that we used in the paper. For each framework, the folders are named accordingly, i.e., "CorInfoMax_Experiments" folder contains examples for our proposed method and "PCNudge_Experiments" contains examples for the algorithm in [4].
 
 ## Simulations
 
