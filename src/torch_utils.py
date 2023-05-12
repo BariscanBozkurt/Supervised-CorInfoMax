@@ -85,15 +85,19 @@ def activation_inverse(x, type_ = "linear"):
     return f_x
 
 def my_sigmoid(x):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     return 1/(1+torch.exp(-4*(x-0.5)))
 
 def hard_sigmoid(x):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     return (1+F.hardtanh(2*x-1))*0.5
 
 def ctrd_hard_sig(x):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     return (F.hardtanh(2*x))*0.5
 
 def my_hard_sig(x):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     return (1+F.hardtanh(x-1))*0.5
 
 # Some helper functions
@@ -102,17 +106,20 @@ def outer_prod_broadcasting(A, B):
     return A[...,None]*B[:,None]
 
 def grad_or_zero(x):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     if x.grad is None:
         return torch.zeros_like(x).to(x.device)
     else:
         return x.grad
 
 def neurons_zero_grad(neurons):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     for idx in range(len(neurons)):
         if neurons[idx].grad is not None:
             neurons[idx].grad.zero_()
 
 def copy(neurons):
+    # Source : https://github.com/Laborieux-Axel/Equilibrium-Propagation/
     copy = []
     for n in neurons:
         copy.append(torch.empty_like(n).copy_(n.data).requires_grad_())
@@ -165,14 +172,9 @@ def evaluateEP(model, loader, T, neural_lr, device, printing = True):
     for x, y in loader:
         x, y = x.to(device), y.to(device)
         neurons = model.init_neurons(x.size(0), device)
-        neurons = model(x, y, neurons, T, neural_lr) # dynamics for T time steps
+        neurons = model(x, y, neurons, T, neural_lr) 
 
-        # if not model.softmax:
-        #     pred = torch.argmax(neurons[-1], dim=1).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
-        # else: # prediction is done as a readout of the penultimate layer (output is not part of the system)
-        #     pred = torch.argmax(F.softmax(model.synapses[-1](neurons[-1].view(x.size(0),-1)), dim = 1), dim = 1).squeeze()
-
-        pred = torch.argmax(neurons[-1], dim=1).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(neurons[-1], dim=1).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -235,7 +237,7 @@ def evaluateContrastiveCorInfoMax(model, loader, neural_lr_start, neural_lr_stop
         # dynamics for T time steps
         neurons = model.run_neural_dynamics(x, 0, neurons, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
         
-        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -259,7 +261,7 @@ def evaluateContrastiveCorInfoMaxHopfield(model, loader, hopfield_g, neural_lr_s
         # dynamics for T time steps
         neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
         
-        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -283,7 +285,7 @@ def evaluateContrastiveCorInfoMaxHopfieldSparse(model, loader, hopfield_g, neura
         # dynamics for T time steps
         neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
         
-        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -352,7 +354,7 @@ def evaluateContrastiveCorInfoMaxHopfieldSparse_topk(model, loader, hopfield_g, 
         # dynamics for T time steps
         neurons, _, _ = model.run_neural_dynamics_hopfield(x, 0, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr, neural_lr_rule, neural_lr_decay_multiplier, T, beta = 0) 
         
-        # pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        # pred = torch.argmax(neurons[-1], dim=0).squeeze()  
         correct += topk_accuracy(neurons[-1], y, topk)[1]
 
     acc = correct/len(loader.dataset) 
@@ -429,7 +431,7 @@ def evaluateContrastiveCorInfoMaxHopfieldSparseV2(model, loader, hopfield_g, neu
             for jj in range(len(neurons)):
                 layer_sparsity[jj].extend(list(torch2numpy(columnwise_sparsity(neurons[jj]))))
                 
-        pred = torch.argmax(neurons[-1], dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(neurons[-1], dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -502,7 +504,7 @@ def evaluateCorInfoMax(model, loader, neural_lr, T, device, printing = True):
         h, y_hat = model.run_neural_dynamics(x, h, y_hat, 0, neural_lr = neural_lr, 
                                              neural_dynamic_iterations = T, beta = 0) 
         
-        pred = torch.argmax(y_hat, dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(y_hat, dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 
@@ -528,7 +530,7 @@ def evaluateCorInfoMaxV2(model, loader, neural_lr_start, neural_lr_stop, neural_
                                              neural_dynamic_iterations = T, beta = 0, lr_rule = neural_lr_rule, 
                                              lr_decay_multiplier = neural_lr_decay_multiplier, mode = "testing") 
         
-        pred = torch.argmax(y_hat, dim=0).squeeze()  # in this case prediction is done directly on the last (output) layer of neurons
+        pred = torch.argmax(y_hat, dim=0).squeeze()  
         correct += (y == pred).sum().item()
 
     acc = correct/len(loader.dataset) 

@@ -16,263 +16,8 @@ import collections
 from torch_utils import *
 import matplotlib
 
-
-class EP(torch.nn.Module):
-    #TODO : Add structured docstring for understandibility
-    """
-    Modified from https://github.com/Laborieux-Axel/Equilibrium-Propagation/blob/master/model_utils.py
-    This EP Class is a little bit different from the one taken from the above github page. The above one uses fixed point iteration in the 
-    neural dynamics, i.e., s_(t+1) = sigma( dPhi/ds ), whereas in this implementation we use s_(t+1) = s(t) - neural_lr * sigma( dPhi/ds )
-    """
-    def __init__(self, architecture, activation = hard_sigmoid):
-        super(EP, self).__init__()
-        
-        self.activation = activation
-        self.architecture = architecture 
-        self.nc = self.architecture[-1]
-
-        # Feedforward and Feedback Synapses Initialization
-        self.W = torch.nn.ModuleList()
-        for idx in range(len(architecture)-1):
-            m = torch.nn.Linear(architecture[idx], architecture[idx+1], bias=True)
-            torch.nn.init.xavier_uniform_(m.weight)
-            # m.weight.data.mul_(torch.tensor([1]))
-            if m.bias is not None:
-                m.bias.data.mul_(0)
-            self.W.append(m)
-
-    def Phi(self, x, y, neurons, beta, criterion):
-        # Computes the primitive function given static input x, label y, neurons is the sequence of hidden layers neurons
-        # criterion is the loss 
-        x = x.view(x.size(0),-1) # flattening the input
-        
-        layers = [x] + neurons  # concatenate the input to other layers
-        
-        # Primitive function computation
-        phi = 0.0
-        for idx in range(len(neurons)): # Squared Norms
-            phi += 0.5*torch.sum( neurons[idx] * neurons[idx], dim=1).squeeze() # Scalar product s_n.s_n
-        for idx in range(len(self.W)): # Linear Terms and Quadratic Terms
-            phi -= torch.sum( self.W[idx](layers[idx]) * layers[idx+1], dim=1).squeeze() # Scalar product s_n.W.s_n-1
-
-        if beta!=0.0: # Nudging the output layer when beta is non zero 
-            if criterion.__class__.__name__.find('MSE')!=-1:
-                y = F.one_hot(y, num_classes=self.nc)
-                L = criterion(layers[-1].float(), y.float()).sum(dim=1).squeeze()   
-            else:
-                L = criterion(layers[-1].float(), y).squeeze()     
-            phi += beta*L
-        
-        return phi
-    
-    
-    def forward(self, x, y, neurons, T, neural_lr = 0.5, beta=0.0, criterion=torch.nn.MSELoss(reduction='none'), check_thm=False):
-        # Run T steps of the dynamics for static input x, label y, neurons and nudging factor beta.
-        not_mse = (criterion.__class__.__name__.find('MSE')==-1)
-        mbs = x.size(0)
-        device = x.device
-
-        for t in range(T):
-            phi = self.Phi(x, y, neurons, beta, criterion) # Computing Phi
-            init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) #Initializing gradients
-            grads = torch.autograd.grad(phi, neurons, grad_outputs=init_grads, create_graph=check_thm) # dPhi/ds
-
-            with torch.no_grad():
-                for idx in range(len(neurons)-1):
-                    neurons[idx] = self.activation(neurons[idx] - neural_lr * grads[idx] )  # s_(t+1) = s_(t) - neural_lr * sigma( dPhi/ds )
-                if check_thm:
-                    neurons[idx].retain_grad()
-                else:
-                    neurons[idx].requires_grad = True
-             
-            if not_mse:
-                neurons[-1] = grads[-1]
-            else:
-                with torch.no_grad():
-                    neurons[-1] = self.activation(neurons[-1] - neural_lr * grads[-1] )
-
-            if check_thm:
-                neurons[-1].retain_grad()
-            else:
-                neurons[-1].requires_grad = True
-
-        return neurons
-
-
-    def init_neurons(self, mbs, device):
-        # Initializing the neurons
-        neurons = []
-        append = neurons.append
-        for size in self.architecture[1:]:  
-            append(torch.zeros((mbs, size), requires_grad=True, device=device))
-        return neurons
-
-
-    def compute_syn_grads(self, x, y, neurons_1, neurons_2, betas, criterion, check_thm=False):
-        # Computing the EP update given two steady states neurons_1 and neurons_2, static input x, label y
-        beta_1, beta_2 = betas
-        
-        self.zero_grad()            # p.grad is zero
-        if not(check_thm):
-            phi_1 = self.Phi(x, y, neurons_1, beta_1, criterion)
-        else:
-            phi_1 = self.Phi(x, y, neurons_1, beta_2, criterion)
-        phi_1 = phi_1.mean()
-        
-        phi_2 = self.Phi(x, y, neurons_2, beta_2, criterion)
-        phi_2 = phi_2.mean()
-        
-        delta_phi = (phi_2 - phi_1)/(beta_2 - beta_1)        
-        delta_phi.backward() # p.grad = -(d_Phi_2/dp - d_Phi_1/dp)/(beta_2 - beta_1) ----> dL/dp  by the theorem
-
-class CSM(torch.nn.Module):
-    """
-    Contrastive Similarity Matching for Supervised Learning.
-    Paper :                             https://arxiv.org/abs/2002.10378
-    Published Official Theano Code :    https://github.com/Pehlevan-Group/Supervised-Similarity-Matching
-    """
-    def __init__(self, architecture, activation, alphas_W, alphas_M, task = "classification"):
-        super(CSM, self).__init__()
-        
-        self.activation = activation
-        self.architecture = architecture 
-        self.nc = self.architecture[-1]
-        self.task = task
-        # Feedforward and Feedboack Synapses Initialization
-        self.W = torch.nn.ModuleList()
-        for idx in range(len(architecture)-1):
-            m = torch.nn.Linear(architecture[idx], architecture[idx+1], bias=True)
-            torch.nn.init.xavier_uniform_(m.weight)
-            # m.weight.data.mul_(torch.tensor([1]))
-            if m.bias is not None:
-                m.bias.data.mul_(0)
-            self.W.append(m)
-
-        # Lateral Synapses Initialization
-        self.M = torch.nn.ModuleList()
-        for idx in range(1,len(architecture)-1):
-            m = torch.nn.Linear(architecture[idx], architecture[idx], bias = False)
-            torch.nn.init.xavier_uniform_(m.weight)
-            m.weight.data = m.weight.data @ m.weight.data.T
-            self.M.append(m)
-
-        self.M_copy = torch.nn.ModuleList()
-        for idx in range(1, len(architecture) - 1):
-            m = torch.nn.Linear(architecture[idx], architecture[idx], bias = False)
-            m.weight.data = self.M[idx-1].weight.data
-            m.weight.data.requires_grad_(False)
-            self.M_copy.append(m)
-
-        optim_params = []
-        for idx in range(len(self.W)):
-            optim_params.append(  {'params': self.W[idx].parameters(), 'lr': alphas_W[idx]}  )
-            
-        for idx in range(len(self.M)):
-            optim_params.append(  {'params': self.M[idx].parameters(), 'lr': alphas_M[idx]}  )
-
-        optimizer = torch.optim.SGD( optim_params, momentum=0.0 )
-        self.optimizer = optimizer
-
-    def Phi(self, x, y, neurons, beta, criterion):
-        # Computes the primitive function given static input x, label y, neurons is the sequence of hidden layers neurons
-        # criterion is the loss
-        x = x.view(x.size(0),-1) # flattening the input
-        
-        layers = [x] + neurons  # concatenate the input to other layers
-        
-        # Primitive function computation
-        phi = 0.0
-        for idx in range(len(neurons)): # Squared Norms
-            phi += 0.5*torch.sum( neurons[idx] * neurons[idx], dim=1).squeeze() # Scalar product s_n.s_n
-        for idx in range(len(self.W)): # Linear Terms and Quadratic Terms
-            phi -= torch.sum( self.W[idx](layers[idx]) * layers[idx+1], dim=1).squeeze() # Scalar product s_n.W.s_n-1
-        for idx in range(len(self.M)): # Lateral Terms
-            if beta != 0.0:
-                phi += 0.5*torch.sum( self.M[idx](layers[idx+1]) * layers[idx+1], dim=1).squeeze() # Scalar product s_n.M.s_n
-            else:
-                phi += 0.5*torch.sum( self.M_copy[idx](layers[idx+1]) * layers[idx+1], dim=1).squeeze() # Scalar product s_n.M.s_n
-
-        if beta!=0.0: # Nudging the output layer when beta is non zero 
-            if criterion.__class__.__name__.find('MSE')!=-1:
-                if self.task == "classification":
-                    y = F.one_hot(y, num_classes=self.nc)
-                L = criterion(layers[-1].float(), y.float()).sum(dim=1).squeeze()   
-            else:
-                L = criterion(layers[-1].float(), y).squeeze()     
-            phi += beta*L
-        
-        return phi
-    
-    def forward(self, x, y, neurons, T, neural_lr = 0.5, beta=0.0, criterion=torch.nn.MSELoss(reduction='none'), check_thm=False):
-        # Run T steps of the dynamics for static input x, label y, neurons and nudging factor beta.
-        not_mse = (criterion.__class__.__name__.find('MSE')==-1)
-        mbs = x.size(0)
-        device = x.device
-
-        for t in range(T):
-            phi = self.Phi(x, y, neurons, beta, criterion) # Computing Phi
-            init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) #Initializing gradients
-            grads = torch.autograd.grad(phi, neurons, grad_outputs=init_grads, create_graph=check_thm) # dPhi/ds
-            with torch.no_grad():
-                for idx in range(len(neurons)-1):
-                    neurons[idx] = self.activation(neurons[idx] - neural_lr * grads[idx] )  # s_(t+1) = s_(t) - neural_lr * sigma( dPhi/ds )
-                if check_thm:
-                    neurons[idx].retain_grad()
-                else:
-                    neurons[idx].requires_grad = True
-             
-            if not_mse:
-                neurons[-1] = grads[-1]
-            else:
-                with torch.no_grad():
-                    neurons[-1] = self.activation(neurons[-1] - neural_lr * grads[-1] )
-
-            if check_thm:
-                neurons[-1].retain_grad()
-            else:
-                neurons[-1].requires_grad = True
-
-        return neurons
-
-    def init_neurons(self, mbs, device):
-        # Initializing the neurons
-        neurons = []
-        append = neurons.append
-        for size in self.architecture[1:]:  
-            append(torch.zeros((mbs, size), requires_grad=True, device=device))
-        return neurons
-
-    def compute_syn_grads(self, x, y, neurons_1, neurons_2, betas, alphas_M, criterion, check_thm=False):
-        # Computing the EP update given two steady states neurons_1 and neurons_2, static input x, label y
-        beta_1, beta_2 = betas
-        
-        self.zero_grad()            # p.grad is zero
-        if not(check_thm):
-            phi_1 = self.Phi(x, y, neurons_1, beta_1, criterion)
-        else:
-            phi_1 = self.Phi(x, y, neurons_1, beta_2, criterion)
-        phi_1 = phi_1.mean()
-        
-        phi_2 = self.Phi(x, y, neurons_2, beta_2, criterion)
-        phi_2 = phi_2.mean()
-        
-        delta_phi = (phi_2 - phi_1)/(beta_2 - beta_1)        
-        delta_phi.backward() # p.grad = -(d_Phi_2/dp - d_Phi_1/dp)/(beta_2 - beta_1) ----> dL/dp  by the theorem
-
-        self.optimizer.step()
-        # Contrastive Similarity Matching Lateral Weight Update additional term is added below (before optimizer step)
-        with torch.no_grad(): # Check line 306 in https://github.com/Pehlevan-Group/Supervised-Similarity-Matching/blob/master/Main/model_wlat_smep_mod.py
-            for kk in range(len(self.M)):
-                Mweight = self.M[kk].weight.data
-                self.M[kk].weight.data = Mweight + (alphas_M[kk]) * Mweight/(2 * np.abs(beta_2))
-                
-        for idx in range(len(self.M)):
-            self.M_copy[idx].weight.data = self.M[idx].weight.data
-            self.M_copy[idx].weight.data.requires_grad_(False)
-
 class ContrastiveCorInfoMaxHopfield():
-    """This is the algorithm to be used in the paper. The summary will be added later.
-    """
+
     def __init__(self, architecture, lambda_, epsilon, activation = hard_sigmoid, device = None):
         
         self.architecture = architecture
@@ -831,6 +576,250 @@ class ContrastiveCorInfoMaxHopfieldSparse(ContrastiveCorInfoMaxHopfield):
             self.neural_dynamics_nudged_backward_info_list.append(nudged_backward_info)
         return neurons
 
+class EP(torch.nn.Module):
+    #TODO : Add structured docstring for understandibility
+    """
+    Modified from https://github.com/Laborieux-Axel/Equilibrium-Propagation/blob/master/model_utils.py
+    This EP Class is a little bit different from the one taken from the above github page. The above one uses fixed point iteration in the 
+    neural dynamics, i.e., s_(t+1) = sigma( dPhi/ds ), whereas in this implementation we use s_(t+1) = s(t) - neural_lr * sigma( dPhi/ds )
+    """
+    def __init__(self, architecture, activation = hard_sigmoid):
+        super(EP, self).__init__()
+        
+        self.activation = activation
+        self.architecture = architecture 
+        self.nc = self.architecture[-1]
+
+        # Feedforward and Feedback Synapses Initialization
+        self.W = torch.nn.ModuleList()
+        for idx in range(len(architecture)-1):
+            m = torch.nn.Linear(architecture[idx], architecture[idx+1], bias=True)
+            torch.nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                m.bias.data.mul_(0)
+            self.W.append(m)
+
+    def Phi(self, x, y, neurons, beta, criterion):
+
+        x = x.view(x.size(0),-1) 
+        
+        layers = [x] + neurons 
+        
+        phi = 0.0
+        for idx in range(len(neurons)): 
+            phi += 0.5*torch.sum( neurons[idx] * neurons[idx], dim=1).squeeze() 
+        for idx in range(len(self.W)): 
+            phi -= torch.sum( self.W[idx](layers[idx]) * layers[idx+1], dim=1).squeeze() 
+
+        if beta!=0.0: 
+            if criterion.__class__.__name__.find('MSE')!=-1:
+                y = F.one_hot(y, num_classes=self.nc)
+                L = criterion(layers[-1].float(), y.float()).sum(dim=1).squeeze()   
+            else:
+                L = criterion(layers[-1].float(), y).squeeze()     
+            phi += beta*L
+        
+        return phi
+    
+    
+    def forward(self, x, y, neurons, T, neural_lr = 0.5, beta=0.0, criterion=torch.nn.MSELoss(reduction='none'), check_thm=False):
+        not_mse = (criterion.__class__.__name__.find('MSE')==-1)
+        mbs = x.size(0)
+        device = x.device
+
+        for t in range(T):
+            phi = self.Phi(x, y, neurons, beta, criterion) 
+            init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) 
+            grads = torch.autograd.grad(phi, neurons, grad_outputs=init_grads, create_graph=check_thm) 
+
+            with torch.no_grad():
+                for idx in range(len(neurons)-1):
+                    neurons[idx] = self.activation(neurons[idx] - neural_lr * grads[idx] )  # s_(t+1) = s_(t) - neural_lr * sigma( dPhi/ds )
+                if check_thm:
+                    neurons[idx].retain_grad()
+                else:
+                    neurons[idx].requires_grad = True
+             
+            if not_mse:
+                neurons[-1] = grads[-1]
+            else:
+                with torch.no_grad():
+                    neurons[-1] = self.activation(neurons[-1] - neural_lr * grads[-1] )
+
+            if check_thm:
+                neurons[-1].retain_grad()
+            else:
+                neurons[-1].requires_grad = True
+
+        return neurons
+
+
+    def init_neurons(self, mbs, device):
+        neurons = []
+        append = neurons.append
+        for size in self.architecture[1:]:  
+            append(torch.zeros((mbs, size), requires_grad=True, device=device))
+        return neurons
+
+
+    def compute_syn_grads(self, x, y, neurons_1, neurons_2, betas, criterion, check_thm=False):
+        beta_1, beta_2 = betas
+        
+        self.zero_grad()           
+        if not(check_thm):
+            phi_1 = self.Phi(x, y, neurons_1, beta_1, criterion)
+        else:
+            phi_1 = self.Phi(x, y, neurons_1, beta_2, criterion)
+        phi_1 = phi_1.mean()
+        
+        phi_2 = self.Phi(x, y, neurons_2, beta_2, criterion)
+        phi_2 = phi_2.mean()
+        
+        delta_phi = (phi_2 - phi_1)/(beta_2 - beta_1)        
+        delta_phi.backward() 
+
+class CSM(torch.nn.Module):
+    """
+    Contrastive Similarity Matching for Supervised Learning.
+    Paper :                             https://arxiv.org/abs/2002.10378
+    Published Official Theano Code :    https://github.com/Pehlevan-Group/Supervised-Similarity-Matching
+    """
+    def __init__(self, architecture, activation, alphas_W, alphas_M, task = "classification"):
+        super(CSM, self).__init__()
+        
+        self.activation = activation
+        self.architecture = architecture 
+        self.nc = self.architecture[-1]
+        self.task = task
+        # Feedforward and Feedboack Synapses Initialization
+        self.W = torch.nn.ModuleList()
+        for idx in range(len(architecture)-1):
+            m = torch.nn.Linear(architecture[idx], architecture[idx+1], bias=True)
+            torch.nn.init.xavier_uniform_(m.weight)
+            # m.weight.data.mul_(torch.tensor([1]))
+            if m.bias is not None:
+                m.bias.data.mul_(0)
+            self.W.append(m)
+
+        # Lateral Synapses Initialization
+        self.M = torch.nn.ModuleList()
+        for idx in range(1,len(architecture)-1):
+            m = torch.nn.Linear(architecture[idx], architecture[idx], bias = False)
+            torch.nn.init.xavier_uniform_(m.weight)
+            m.weight.data = m.weight.data @ m.weight.data.T
+            self.M.append(m)
+
+        self.M_copy = torch.nn.ModuleList()
+        for idx in range(1, len(architecture) - 1):
+            m = torch.nn.Linear(architecture[idx], architecture[idx], bias = False)
+            m.weight.data = self.M[idx-1].weight.data
+            m.weight.data.requires_grad_(False)
+            self.M_copy.append(m)
+
+        optim_params = []
+        for idx in range(len(self.W)):
+            optim_params.append(  {'params': self.W[idx].parameters(), 'lr': alphas_W[idx]}  )
+            
+        for idx in range(len(self.M)):
+            optim_params.append(  {'params': self.M[idx].parameters(), 'lr': alphas_M[idx]}  )
+
+        optimizer = torch.optim.SGD( optim_params, momentum=0.0 )
+        self.optimizer = optimizer
+
+    def Phi(self, x, y, neurons, beta, criterion):
+
+        x = x.view(x.size(0),-1) 
+        
+        layers = [x] + neurons  
+        
+
+        phi = 0.0
+        for idx in range(len(neurons)): 
+            phi += 0.5*torch.sum( neurons[idx] * neurons[idx], dim=1).squeeze() 
+        for idx in range(len(self.W)): 
+            phi -= torch.sum( self.W[idx](layers[idx]) * layers[idx+1], dim=1).squeeze() 
+        for idx in range(len(self.M)): 
+            if beta != 0.0:
+                phi += 0.5*torch.sum( self.M[idx](layers[idx+1]) * layers[idx+1], dim=1).squeeze() 
+            else:
+                phi += 0.5*torch.sum( self.M_copy[idx](layers[idx+1]) * layers[idx+1], dim=1).squeeze() 
+
+        if beta!=0.0: 
+            if criterion.__class__.__name__.find('MSE')!=-1:
+                if self.task == "classification":
+                    y = F.one_hot(y, num_classes=self.nc)
+                L = criterion(layers[-1].float(), y.float()).sum(dim=1).squeeze()   
+            else:
+                L = criterion(layers[-1].float(), y).squeeze()     
+            phi += beta*L
+        
+        return phi
+    
+    def forward(self, x, y, neurons, T, neural_lr = 0.5, beta=0.0, criterion=torch.nn.MSELoss(reduction='none'), check_thm=False):
+
+        not_mse = (criterion.__class__.__name__.find('MSE')==-1)
+        mbs = x.size(0)
+        device = x.device
+
+        for t in range(T):
+            phi = self.Phi(x, y, neurons, beta, criterion) 
+            init_grads = torch.tensor([1 for i in range(mbs)], dtype=torch.float, device=device, requires_grad=True) 
+            grads = torch.autograd.grad(phi, neurons, grad_outputs=init_grads, create_graph=check_thm) 
+            with torch.no_grad():
+                for idx in range(len(neurons)-1):
+                    neurons[idx] = self.activation(neurons[idx] - neural_lr * grads[idx] )  # s_(t+1) = s_(t) - neural_lr * sigma( dPhi/ds )
+                if check_thm:
+                    neurons[idx].retain_grad()
+                else:
+                    neurons[idx].requires_grad = True
+             
+            if not_mse:
+                neurons[-1] = grads[-1]
+            else:
+                with torch.no_grad():
+                    neurons[-1] = self.activation(neurons[-1] - neural_lr * grads[-1] )
+
+            if check_thm:
+                neurons[-1].retain_grad()
+            else:
+                neurons[-1].requires_grad = True
+
+        return neurons
+
+    def init_neurons(self, mbs, device):
+        neurons = []
+        append = neurons.append
+        for size in self.architecture[1:]:  
+            append(torch.zeros((mbs, size), requires_grad=True, device=device))
+        return neurons
+
+    def compute_syn_grads(self, x, y, neurons_1, neurons_2, betas, alphas_M, criterion, check_thm=False):
+        
+        beta_1, beta_2 = betas
+        
+        self.zero_grad()            # p.grad is zero
+        if not(check_thm):
+            phi_1 = self.Phi(x, y, neurons_1, beta_1, criterion)
+        else:
+            phi_1 = self.Phi(x, y, neurons_1, beta_2, criterion)
+        phi_1 = phi_1.mean()
+        
+        phi_2 = self.Phi(x, y, neurons_2, beta_2, criterion)
+        phi_2 = phi_2.mean()
+        
+        delta_phi = (phi_2 - phi_1)/(beta_2 - beta_1)        
+        delta_phi.backward() 
+
+        self.optimizer.step()
+        # Contrastive Similarity Matching Lateral Weight Update additional term is added below (before optimizer step)
+        with torch.no_grad(): # Check line 306 in https://github.com/Pehlevan-Group/Supervised-Similarity-Matching/blob/master/Main/model_wlat_smep_mod.py
+            for kk in range(len(self.M)):
+                Mweight = self.M[kk].weight.data
+                self.M[kk].weight.data = Mweight + (alphas_M[kk]) * Mweight/(2 * np.abs(beta_2))
+                
+        for idx in range(len(self.M)):
+            self.M_copy[idx].weight.data = self.M[idx].weight.data
+            self.M_copy[idx].weight.data.requires_grad_(False)
 
 ###### Debugging #####
 

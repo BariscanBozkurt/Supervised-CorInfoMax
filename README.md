@@ -25,7 +25,7 @@ All the codes are written in Python 3.8 and utilizes Pytorch tensors to be able 
 ## src
 Python Script         |  Explanation
 :--------------------:|:-------------------------:
-ContrastiveModels.py   | This python file includes our proposed framework Correlative Information-based neural network. ContrastiveCorInfoMaxHopfield and ContrastiveCorInfoMaxHopfieldSparse are the two methods that we proposed in our paper. Also, it includes other contrastive methods Equilibrium Propagation [1] and Contrastive Similarity Matching [2]. 
+ContrastiveModels.py   | This python file includes our proposed framework Correlative Information-based neural network. ContrastiveCorInfoMaxHopfield and ContrastiveCorInfoMaxHopfieldSparse are the two methods that we proposed in our paper. Also, it includes other contrastive methods Equilibrium Propagation [1] and Contrastive Similarity Matching [2]. The implementation of EP is modified from the published code of [5].
 ExplicitModels.py       | The explicit methods Predictive Coding [3] and Predictive Coding-Nudge [4] algorihtms are included in this python script.
 torch_utils.py          | Some Pytorch utilization functions such as activation functions and evaluation functions.
 visualization.py        | Some visuzalization helper functions.
@@ -34,8 +34,15 @@ visualization.py        | Some visuzalization helper functions.
 
 ## Simulations
 
-The image classification experiments are included inside the folder "Simulations/Classification". The subfolder for simulations are named accordingly, i.e., "Simulations/Classification/CorInfoMax" folder includes the simulations for our proposed method in the main text. Similarly, "Simulations/Classification/CorInfoMaxSparse" folder includes the simulations of our framework that is presented in Appendix E. The folder "Simulations/Classification/AnalyzeSimulations" contains the jupyter notebook files to generate the plots and tables presented in our paper. Below, we outline recipe to reproduce the experiments in our paper:
+The image classification experiments are included inside the folder "Simulations/Classification". The subfolder for simulations are named accordingly, i.e., "Simulations/Classification/CorInfoMax" folder includes the simulations for our proposed method in the main text. Similarly, "Simulations/Classification/CorInfoMaxSparse" folder includes the simulations of our framework that is presented in Appendix E. 
 
+The folder "Simulations/Classification/AnalyzeSimulations" contains the jupyter notebook files to generate the plots and tables presented in our paper. Below, we outline recipe to reproduce the experiments in our paper.
+
+    * For example, to simulate the experiments for MNIST classification task with CorInfoMax network, you need to run the python script "Simulations/Classification/CorInfoMax_MNIST_Simulation_V1.py". You can use the following command:
+    ``` python Simulations/Classification/CorInfoMax_MNIST_Simulation_V1.py```
+
+    * Once you run this code, the following pickle files will be created under the folder "Simulations/Classification/Results":
+        * Simulations/Classification/Results/simulation_results_CorInfoMax_MNIST_V1.pkl
 
 ## References (for the other algorithms included in this code repo)
 
@@ -46,3 +53,5 @@ The image classification experiments are included inside the folder "Simulations
 [3] James CR Whittington and Rafal Bogacz. An approximation of the error backpropagation algorithm in a predictive coding network with local hebbian synaptic plasticity. Neural computation, 29(5):1229–1262, 2017.
 
 [4] Beren Millidge, Yuhang Song, Tommaso Salvatori, Thomas Lukasiewicz, and Rafal Bogacz. Backpropagation at the infinitesimal inference limit of energy-based models: Unifying predictive coding, equilibrium propagation, and contrastive hebbian learning. In The Eleventh International Conference on Learning Representations, 2023.
+
+[5] Axel Laborieux, Maxence Ernoult, Benjamin Scellier, Yoshua Bengio, Julie Grollier, and Damien Querlioz. Scaling equilibrium propagation to deep convnets by drastically reducing its gradient estimator bias. Frontiers in Neuroscience, 15:633674, 02 2021.
