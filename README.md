@@ -39,6 +39,7 @@ The image classification experiments are included inside the folder "Simulations
 The folder "Simulations/Classification/AnalyzeSimulations" contains the jupyter notebook files to generate the plots and tables presented in our paper. Below, we outline recipe to reproduce the experiments in our paper.
 
 * For example, to simulate the experiments for MNIST classification task with CorInfoMax network, you need to run the python script "Simulations/Classification/CorInfoMax_MNIST_Simulation_V1.py". You can use the following command:
+
     ``` python Simulations/Classification/CorInfoMax_MNIST_Simulation_V1.py```
 
 * Once you run this code, the following pickle files will be created under the folder "Simulations/Classification/Results":
@@ -47,7 +48,9 @@ The folder "Simulations/Classification/AnalyzeSimulations" contains the jupyter 
 * To analyze the results, you can use the code snippet from the jupyter notebook "Simulations/Classification/AnalyzeSimulations/Plot_CorInfoMax_MNIST_Results.ipynb". The section under the CorInfoMax title presents the table and plot for the results. This notebook also contains the comparison plots of our framework with other algorithms EP [1], CSM [2], PC [3], PC-Nudge [4]. In order to obtain these plots, you need to also run the simulation of other algorihtms, i.e., "Simulations/Classification/EP/EP_MNIST_Simulation.py" for EP results on MNIST dataset.
 
 * As another example, to run the simulations on CIFAR10 dataset, run the following command:
+
     ``` python Simulations/Classification/CorInfoMax_CIFAR10_Simulation_V1.py```
+
 It will generate the pickle file "Simulations/Classification/Results/simulation_results_CorInfoMax_CIFAR10_V1.pkl" containing the results. To analyze the results for this experiment, you can use the code snippet in the jupyter notebook "Simulations/Classification/AnalyzeSimulations/Plot_CorInfoMax_CIFAR10_Results.ipynb".
 
 * Similar to the above two examples, you can run each experiment by running the corresponding python script in the "Simulation" folder. We suggest you to first look at the plots and tables in the jupyter notebooks located at the folder "Simulations/Classification/AnalyzeSimulations/".
