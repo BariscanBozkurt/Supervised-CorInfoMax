@@ -25,14 +25,17 @@ All the codes are written in Python 3.8 and utilizes Pytorch tensors to be able 
 ## src
 Python Script         |  Explanation
 :--------------------:|:-------------------------:
-ContrastiveModels.py   | This python file includes our proposed framework Correlative Information-based neural network. ContrastiveCorInfoMaxHopfield and ContrastiveCorInfoMaxHopfieldSparse are the two methods that we proposed in our paper. Also, this python script includes other contrastive methods Equilibrium Propagation [1] and Contrastive Similarity Matching [2]. 
+ContrastiveModels.py   | This python file includes our proposed framework Correlative Information-based neural network. ContrastiveCorInfoMaxHopfield and ContrastiveCorInfoMaxHopfieldSparse are the two methods that we proposed in our paper. Also, it includes other contrastive methods Equilibrium Propagation [1] and Contrastive Similarity Matching [2]. 
 ExplicitModels.py       | The explicit methods Predictive Coding [3] and Predictive Coding-Nudge [4] algorihtms are included in this python script.
-torch_utils.py          |
-visualization.py        |
+torch_utils.py          | Some Pytorch utilization functions such as activation functions and evaluation functions.
+visualization.py        | Some visuzalization helper functions.
 
 ## Notebook_Examples
 
 ## Simulations
+
+The image classification experiments are included inside the folder "Simulations/Classification". The subfolder for simulations are named accordingly, i.e., "Simulations/Classification/CorInfoMax" folder includes the simulations for our proposed method in the main text. Similarly, "Simulations/Classification/CorInfoMaxSparse" folder includes the simulations of our framework that is presented in Appendix E. The folder "Simulations/Classification/AnalyzeSimulations" contains the jupyter notebook files to generate the plots and tables presented in our paper. Below, we outline recipe to reproduce the experiments in our paper:
+
 
 ## References (for the other algorithms included in this code repo)
 
