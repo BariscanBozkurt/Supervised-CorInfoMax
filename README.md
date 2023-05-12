@@ -25,11 +25,21 @@ All the codes are written in Python 3.8 and utilizes Pytorch tensors to be able 
 ## src
 Python Script         |  Explanation
 :--------------------:|:-------------------------:
-ContrastiveModels.py   |
-ExplicitModels.py       |
+ContrastiveModels.py   | This python file includes our proposed framework Correlative Information-based neural network. ContrastiveCorInfoMaxHopfield and ContrastiveCorInfoMaxHopfieldSparse are the two methods that we proposed in our paper. Also, this python script includes other contrastive methods Equilibrium Propagation [1] and Contrastive Similarity Matching [2]. 
+ExplicitModels.py       | The explicit methods Predictive Coding [3] and Predictive Coding-Nudge [4] algorihtms are included in this python script.
 torch_utils.py          |
 visualization.py        |
 
 ## Notebook_Examples
 
 ## Simulations
+
+## References (for the other algorithms included in this code repo)
+
+[1] Benjamin Scellier and Yoshua Bengio. Equilibrium propagation: Bridging the gap between energy-based models and backpropagation. Frontiers in Computational Neuroscience, 11, 2017.
+
+[2] Shanshan Qin, Nayantara Mudur, and Cengiz Pehlevan. Contrastive similarity matching for supervised learning. Neural computation, 33(5):1300–1328, 2021.
+
+[3] James CR Whittington and Rafal Bogacz. An approximation of the error backpropagation algorithm in a predictive coding network with local hebbian synaptic plasticity. Neural computation, 29(5):1229–1262, 2017.
+
+[4] Beren Millidge, Yuhang Song, Tommaso Salvatori, Thomas Lukasiewicz, and Rafal Bogacz. Backpropagation at the infinitesimal inference limit of energy-based models: Unifying predictive coding, equilibrium propagation, and contrastive hebbian learning. In The Eleventh International Conference on Learning Representations, 2023.
