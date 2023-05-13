@@ -576,6 +576,209 @@ class ContrastiveCorInfoMaxHopfieldSparse(ContrastiveCorInfoMaxHopfield):
             self.neural_dynamics_nudged_backward_info_list.append(nudged_backward_info)
         return neurons
 
+class ContrastiveCorInfoMaxHopfieldSparseV2(ContrastiveCorInfoMaxHopfield):
+    def __init__(self, architecture, lambda_, epsilon, activation = hard_sigmoid, sparse_layers = [], device = None):
+        self.sparse_layers = sparse_layers
+        super().__init__(architecture, lambda_, epsilon, activation, device)
+        
+    ###############################################################
+    ############### NEURAL DYNAMICS ALGORITHMS ####################
+    ###############################################################
+    def run_neural_dynamics_hopfield(self, x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list,
+                                     lr_rule = "constant", lr_decay_multiplier = 0.1, 
+                                     neural_dynamic_iterations = 10, beta = 1, take_debug_logs = False):
+        mbs = x.size(1)
+        if beta == 0:
+            STLAMBD_list = [torch.zeros(1, mbs).to(self.device) for _ in range(len(neurons))]
+        else:
+            STLAMBD_list = self.STLAMBD_list
+        STLAMBD_list_intermediate = self.copy_neurons(STLAMBD_list)
+        # if take_debug_logs:
+        if beta != 0:
+            phase = "free"
+        else:
+            phase = "nudged"
+        forward_info = []
+        backward_info = []
+            
+        Wff = self.Wff
+        Wfb = self.Wfb
+        B = self.B
+        gam_ = self.gam_
+        epsilon = self.epsilon
+        one_over_epsilon = self.one_over_epsilon
+
+        neurons_intermediate = self.copy_neurons(neurons)
+        layers = [x] + neurons  # concatenate the input to other layers
+        for iter_count in range(neural_dynamic_iterations):
+
+            if lr_rule == "constant":
+                neural_lr = neural_lr_start
+            elif lr_rule == "divide_by_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count + 1), neural_lr_stop)
+            elif lr_rule == "divide_by_slow_loop_index":
+                neural_lr = max(neural_lr_start / (iter_count * lr_decay_multiplier + 1), neural_lr_stop)
+
+            with torch.no_grad():       
+                for jj in range(len(neurons)):
+                    if jj == len(neurons) - 1:
+                        basal_voltage = Wff[jj]['weight'] @ layers[jj]
+                        # apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
+                        # gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                        
+                        if (jj + 1) in self.sparse_layers:
+                            apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - STLAMBD_list[jj] - beta * (layers[jj + 1] - y)
+                            gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
+                            neurons[jj] = F.relu(neurons_intermediate[jj])
+                            
+                            STLAMBD_list_intermediate[jj] = STLAMBD_list_intermediate[jj] + STlambda_lr_list[jj] * ((torch.sum(neurons[jj], 0).view(1, -1) - 1))
+                            STLAMBD_list[jj] = F.relu(STLAMBD_list_intermediate[jj])
+                        else:
+                            apical_voltage = (gam_ * B[jj]['weight'] @ ( layers[jj + 1]) + hopfield_g * layers[jj + 1]) - beta * (layers[jj + 1] - y)
+                            gradient_neurons = -hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + (apical_voltage - neurons_intermediate[jj]) #+ 2 * beta * (y - layers[jj + 1])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
+                            neurons[jj] = self.activation(neurons_intermediate[jj])
+                    else:
+                        basal_voltage = Wff[jj]['weight'] @ layers[jj] 
+                        # apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
+                        # gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                        
+                        if (jj + 1) in self.sparse_layers:
+                            apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) - epsilon * STLAMBD_list[jj]#+ Wfb[jj + 1]['bias']
+                            gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
+                            neurons[jj] = F.relu(neurons_intermediate[jj])
+                            STLAMBD_list_intermediate[jj] = STLAMBD_list_intermediate[jj] + STlambda_lr_list[jj] * ((torch.sum(neurons[jj], 0).view(1, -1) - 1))
+                            STLAMBD_list[jj] = F.relu(STLAMBD_list_intermediate[jj])
+                        else:
+                            apical_voltage = epsilon * (2 * gam_ * B[jj]['weight'] @ (layers[jj + 1]) + hopfield_g * layers[jj + 1]) + (Wfb[jj + 1]['weight'] @ layers[jj + 2]) #+ Wfb[jj + 1]['bias']
+                            gradient_neurons = - hopfield_g * neurons_intermediate[jj] + one_over_epsilon * (basal_voltage - neurons_intermediate[jj]) + one_over_epsilon * (apical_voltage - neurons_intermediate[jj])
+                            neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons 
+                            neurons[jj] = self.activation(neurons_intermediate[jj])
+                        # neurons_intermediate[jj] = neurons_intermediate[jj] + neural_lr * gradient_neurons
+                        # neurons[jj] = self.activation(neurons_intermediate[jj])
+                    layers = [x] + neurons  # concatenate the input to other layers
+
+            if take_debug_logs:
+                info_measures = self.layerwise_forward_and_backward_correlative_information(layers, phase)
+                forward_info.append(np.sum(info_measures[0]))
+                backward_info.append(np.sum(info_measures[1]))
+                    # neurons[neuron_iter] = self.activation(neurons[neuron_iter] + neural_lr * neuron_grads[neuron_iter])
+        self.STLAMBD_list = STLAMBD_list
+        return neurons, forward_info, backward_info
+
+    ###############################################################
+    ############### BATCH STEP ALGORITHMS #########################
+    ###############################################################
+    def batch_step_hopfield(self, x, y, hopfield_g, lr, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule = "constant", 
+                            neural_lr_decay_multiplier = 0.1, neural_dynamic_iterations_free = 20, 
+                            neural_dynamic_iterations_nudged = 10, beta = 1, use_three_phase = False, 
+                            take_debug_logs = False, weight_decay = False):
+
+        Wff, Wfb, B = self.Wff, self.Wfb, self.B
+        lambda_ = self.lambda_
+        gam_ = self.gam_
+        epsilon = self.epsilon
+
+        Rfree = self.Rfree # For debugging to check the correlation matrices vs inverse correlation matrices
+        Rnudged = self.Rnudged # For debugging to check the correlation matrices vs inverse correlation matrices
+
+        # neurons = self.init_neurons(x.size(1), device = self.device)
+        neurons = self.init_neurons(x.size(1), device = self.device)
+
+        (neurons,
+         free_forward_info,
+         free_backward_info
+        ) = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
+                                             neural_lr_decay_multiplier, neural_dynamic_iterations_free, 0, take_debug_logs)
+
+        
+        neurons1 = neurons.copy()
+        layers_free_ = [x] + neurons1
+
+        for jj in range(len(B)):
+
+            Rfree[jj]['weight'] = lambda_ * Rfree[jj]['weight'] + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons1[jj].T, neurons1[jj].T), axis = 0)
+
+        (neurons,
+         nudged_forward_info,
+         nudged_backward_info 
+        ) = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
+                                              neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, beta, take_debug_logs)
+
+
+        neurons2 = neurons.copy()
+
+        if use_three_phase:
+            neurons, _, _ = self.run_neural_dynamics_hopfield(x, y, neurons, hopfield_g, neural_lr_start, neural_lr_stop, STlambda_lr_list, neural_lr_rule, 
+                                                              neural_lr_decay_multiplier, neural_dynamic_iterations_nudged, -beta, take_debug_logs)
+
+            neurons3 = neurons.copy()
+
+            layers_free = [x] + neurons3
+        else:
+            layers_free = [x] + neurons1
+
+        layers_nudged = [x] + neurons2
+
+        ## Compute forward errors
+        forward_errors_free = [layers_free[jj + 1] - (Wff[jj]['weight'] @ layers_free[jj]) for jj in range(len(Wff))]
+        forward_errors_nudged = [layers_nudged[jj + 1] - (Wff[jj]['weight'] @ layers_nudged[jj]) for jj in range(len(Wff))]
+        ## Compute backward errors
+        backward_errors_free = [(layers_free[jj]) - (Wfb[jj]['weight'] @ layers_free[jj + 1]) for jj in range(1, len(Wfb))]
+        backward_errors_nudged = [(layers_nudged[jj]) - (Wfb[jj]['weight'] @ layers_nudged[jj + 1]) for jj in range(1, len(Wfb))]
+
+        ### Learning updates for feed-forward and backward weights
+        for jj in range(len(Wff)):
+            Wff[jj]['weight'] += -(1/(beta * (int(use_three_phase) + 1))) * lr['ff'][jj] * torch.mean(outer_prod_broadcasting(forward_errors_free[jj].T, layers_free[jj].T) - outer_prod_broadcasting(forward_errors_nudged[jj].T, layers_nudged[jj].T), axis = 0)
+            if weight_decay:
+                Wff[jj]['weight'] -= lr['ff'][jj] * epsilon * Wff[jj]['weight']
+
+        for jj in range(1, len(Wfb)):
+            Wfb[jj]['weight'] += -(1/(beta * (int(use_three_phase) + 1))) * lr['fb'][jj] * torch.mean(outer_prod_broadcasting(backward_errors_free[jj - 1].T, layers_free[jj + 1].T) - outer_prod_broadcasting(backward_errors_nudged[jj - 1].T, layers_nudged[jj + 1].T), axis = 0)
+            if weight_decay:
+                Wfb[jj]['weight'] -= lr['fb'][jj] * epsilon * Wfb[jj]['weight']
+        ### Lateral Weight Updates
+        for jj in range(len(B)):
+            z = B[jj]['weight'] @ (neurons2[jj])
+            B_update = torch.mean(outer_prod_broadcasting(z.T, z.T), axis = 0)
+            B[jj]['weight'] = (1 / lambda_) * (B[jj]['weight'] - gam_ * B_update)
+
+            Rnudged[jj]['weight'] = lambda_ * Rnudged[jj]['weight'] + (1 - lambda_) * torch.mean(outer_prod_broadcasting(neurons2[jj].T, neurons2[jj].T), axis = 0)
+                 
+        self.B = B
+        self.Wff = Wff
+        self.Wfb = Wfb
+        self.Rfree = Rfree
+        self.Rnudged = Rnudged
+
+        if take_debug_logs:
+            instant_forward_backward_angles = []
+            for jj in range(1, len(Wff)):
+                instant_forward_backward_angles.append(self.angle_between_two_matrices(self.Wff[jj]['weight'], self.Wfb[jj]['weight'].T).item())
+            
+            self.forward_backward_angles.append(instant_forward_backward_angles)
+
+            (forward_info_list_free, 
+             backward_info_list_free, 
+            ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, "free")
+
+            (forward_info_list_nudged, 
+             backward_info_list_nudged, 
+            ) = self.layerwise_forward_and_backward_correlative_information(layers_free_, "nudged")
+
+            self.layerwise_forward_corinfo_list_free.append(forward_info_list_free)
+            self.layerwise_backward_corinfo_list_free.append(backward_info_list_free)
+            self.layerwise_forward_corinfo_list_nudged.append(forward_info_list_nudged)
+            self.layerwise_backward_corinfo_list_nudged.append(backward_info_list_nudged)
+
+            self.neural_dynamics_free_forward_info_list.append(free_forward_info)
+            self.neural_dynamics_free_backward_info_list.append(free_backward_info)
+            self.neural_dynamics_nudged_forward_info_list.append(nudged_forward_info)
+            self.neural_dynamics_nudged_backward_info_list.append(nudged_backward_info)
+        return neurons
+
 class EP(torch.nn.Module):
     #TODO : Add structured docstring for understandibility
     """
