@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMaxSparse_FashionMNIST_V6.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMaxSparse_FashionMNIST_V1.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
