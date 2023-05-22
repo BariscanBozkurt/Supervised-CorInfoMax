@@ -362,6 +362,23 @@ def evaluateContrastiveCorInfoMaxHopfieldSparse_topk(model, loader, hopfield_g, 
         print(phase+' accuracy :\t', acc)   
     return acc
 
+def evaluateClassification_topk(model, loader, device, topk = (1,), printing = True):
+    # Evaluate Artificial Neural Network on Classification Task for topk accuracies
+    model.eval()
+    correct = 0
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        
+        y_hat = model(x)
+        
+        pred = torch.argmax(y_hat, dim=1)#.squeeze()  
+        correct += topk_accuracy(y_hat.T, y, topk)[1]
+
+    acc = correct/len(loader.dataset) 
+    if printing:
+        print('Accuracy :\t', acc)   
+    return acc
+
 def columnwise_sparsity(x, threshold = 0.01):
     return (x < threshold).sum(0) / x.shape[0]
 
