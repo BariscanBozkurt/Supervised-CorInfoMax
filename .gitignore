@@ -18,3 +18,4 @@ CorInfoMaxNudge_Experiments
 CorInfoMax_Experiments
 Under_Analysis_Experiments
 .ipynb_checkpoints
+Baseline_Experiments/*Copy*.ipynb
