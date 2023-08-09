@@ -47,8 +47,8 @@ test_loader = torch.utils.data.DataLoader(cifar_dset_test, batch_size=20, shuffl
 activation = F.relu
 architecture = [int(32*32*3), 1000, 10]
 supervised_lambda_weight_out = 1e-3
-neural_lr_start = 0.1 
-neural_lr_stop = 0.05 
+neural_lr_start = 0.01 
+neural_lr_stop = 0.01 
 neural_lr_rule = "constant"
 neural_lr_decay_multiplier = 0.005
 neural_dynamic_iterations = 50
