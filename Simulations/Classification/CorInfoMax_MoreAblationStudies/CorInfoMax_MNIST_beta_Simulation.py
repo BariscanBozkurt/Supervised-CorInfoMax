@@ -49,7 +49,7 @@ architecture = [784, 500, 10]
 RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperparams', 'Trn_ACC_list', 'Tst_ACC_list', 'forward_backward_weight_angle_list'])
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
-beta_list = [1, 0.75, 0.5, 0.25, 0.1]
+beta_list = [2, 1, 0.75, 0.5, 0.25, 0.1]
 lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
