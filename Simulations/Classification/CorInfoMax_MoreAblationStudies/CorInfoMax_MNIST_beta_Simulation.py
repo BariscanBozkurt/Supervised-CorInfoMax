@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_muBackward_Ablation_V1.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_beta_Ablation_V1.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -49,11 +49,11 @@ architecture = [784, 500, 10]
 RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperparams', 'Trn_ACC_list', 'Tst_ACC_list', 'forward_backward_weight_angle_list'])
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
-beta = 1
+beta_list = [1, 0.75, 0.5, 0.25, 0.1]
 lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-muBackward_multiplier_list = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5]
+lr_start_list = [{'ff' : np.array([1.0, 0.7]), 'fb': np.array([0.15, 0.15])}]
 lr_decay_multiplier_list = [0.95]
 neural_lr_start_list = [0.05]
 neural_lr_stop = 0.001
@@ -69,17 +69,16 @@ n_epochs = 50
 seed_list = [10*j for j in range(3)]
 
 setting_number = 0
-for muBackward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(muBackward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
+for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase, beta in product(lr_start_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list, beta_list):
     setting_number += 1
-    lr_start = {'ff' : np.array([1.0, 0.7]), 'fb': muBackward_multiplier * np.array([0.15, 0.15])}
-    hyperparams_dict = {"muBackward_multiplier" : muBackward_multiplier, "lr_start" : lr_start, 
-                        "lr_decay_multiplier" : lr_decay_multiplier,
+    hyperparams_dict = {"lr_start" : lr_start, "lr_decay_multiplier" : lr_decay_multiplier,
                         "neural_dynamic_iterations_free" : neural_dynamic_iterations_free,
                         "neural_dynamic_iterations_nudged" : neural_dynamic_iterations_nudged, 
                         "neural_lr_rule" : neural_lr_rule, "neural_lr" : neural_lr_start, 
                         "epsilon" : epsilon, "lambda" : lambda_,
                         "architecture" : architecture,
-                        "three_phase" : use_three_phase}
+                        "three_phase" : use_three_phase,
+                        "beta": beta}
     for seed_ in seed_list:
         np.random.seed(seed_)
         torch.manual_seed(seed_)

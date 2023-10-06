@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_muBackward_Ablation_V1.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_neural_lr_start_Ablation_V1.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -53,13 +53,13 @@ beta = 1
 lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-muBackward_multiplier_list = [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 2.5]
-lr_decay_multiplier_list = [0.95]
-neural_lr_start_list = [0.05]
+lr_start_list = [{'ff' : np.array([1.0, 0.7]), 'fb': np.array([0.15, 0.15])}]
+lr_decay_multiplier_list = [0.99]
+neural_lr_start_list = [0.015, 0.3, 0.05, 0.075, 0.1, 0.15]
 neural_lr_stop = 0.001
 neural_lr_rule_list = ["divide_by_slow_loop_index"]
 neural_lr_decay_multiplier = 0.01
-neural_dynamic_iterations_nudged = 10
+neural_dynamic_iterations_nudged = 10   
 neural_dynamic_iterations_free_list = [30]
 hopfield_g_list = [0.5]
 use_random_sign_beta = True
@@ -69,11 +69,9 @@ n_epochs = 50
 seed_list = [10*j for j in range(3)]
 
 setting_number = 0
-for muBackward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(muBackward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
+for lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(lr_start_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
     setting_number += 1
-    lr_start = {'ff' : np.array([1.0, 0.7]), 'fb': muBackward_multiplier * np.array([0.15, 0.15])}
-    hyperparams_dict = {"muBackward_multiplier" : muBackward_multiplier, "lr_start" : lr_start, 
-                        "lr_decay_multiplier" : lr_decay_multiplier,
+    hyperparams_dict = {"lr_start" : lr_start, "lr_decay_multiplier" : lr_decay_multiplier,
                         "neural_dynamic_iterations_free" : neural_dynamic_iterations_free,
                         "neural_dynamic_iterations_nudged" : neural_dynamic_iterations_nudged, 
                         "neural_lr_rule" : neural_lr_rule, "neural_lr" : neural_lr_start, 
@@ -126,7 +124,7 @@ for muBackward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule,
         Result_Dict = {"setting_number" : setting_number, "seed" : seed_, "Model" : "CorInfoMax", 
                         "Hyperparams" : hyperparams_dict, "Trn_ACC_list" : trn_acc_list, "Tst_ACC_list" : tst_acc_list,
                         "forward_backward_weight_angle_list" : model.forward_backward_angles}
-
+        
         # RESULTS_DF = RESULTS_DF.append(Result_Dict, ignore_index = True)
         RESULTS_DF = pd.concat([RESULTS_DF, pd.DataFrame([Result_Dict])], ignore_index=True)
         RESULTS_DF.to_pickle(os.path.join("../Results", pickle_name_for_results))

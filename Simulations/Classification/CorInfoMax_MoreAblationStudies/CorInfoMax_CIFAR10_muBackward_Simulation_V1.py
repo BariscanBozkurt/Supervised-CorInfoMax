@@ -67,7 +67,7 @@ use_random_sign_beta = True
 use_three_phase_list = [False]
 
 n_epochs = 50
-seed_list = [10*j for j in range(10)]
+seed_list = [10*j for j in range(3)]
 
 setting_number = 0
 for lambda_, muBackward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(lambda_list, muBackward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
