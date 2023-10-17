@@ -30,50 +30,49 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_CIFAR10_muForward_Ablation_V1.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_MNIST_muForward_Ablation_V2.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor(), 
-                                            torchvision.transforms.Normalize(mean=(0.4914, 0.4822, 0.4465), 
-                                            std=(3*0.2023, 3*0.1994, 3*0.2010))])
+                                            torchvision.transforms.Normalize(mean=(0.0,), std=(1.0,))])
 
-cifar_dset_train = torchvision.datasets.CIFAR10('../../../data', train=True, transform=transform, target_transform=None, download=True)
-train_loader = torch.utils.data.DataLoader(cifar_dset_train, batch_size=20, shuffle=True, num_workers=0)
+mnist_dset_train = torchvision.datasets.MNIST('../../../data', train=True, transform=transform, target_transform=None, download=True)
+train_loader = torch.utils.data.DataLoader(mnist_dset_train, batch_size=20, shuffle=True, num_workers=0)
 
-cifar_dset_test = torchvision.datasets.CIFAR10('../../../data', train=False, transform=transform, target_transform=None, download=True)
-test_loader = torch.utils.data.DataLoader(cifar_dset_test, batch_size=20, shuffle=False, num_workers=0)
+mnist_dset_test = torchvision.datasets.MNIST('../../../data', train=False, transform=transform, target_transform=None, download=True)
+test_loader = torch.utils.data.DataLoader(mnist_dset_test, batch_size=20, shuffle=False, num_workers=0)
 
 activation = hard_sigmoid
-architecture = [int(32*32*3), 1000, 10]
+architecture = [784, 500, 10]
 
 RESULTS_DF = pd.DataFrame( columns = ['setting_number', 'seed', 'Model', 'Hyperparams', 'Trn_ACC_list', 'Tst_ACC_list', 'forward_backward_weight_angle_list'])
 
 ############# HYPERPARAMS GRID SEARCH LISTS #########################
 beta = 1
-lambda_list = [0.99995]
+lambda_ = 0.99999
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
 muForward_multiplier_list = [0.1, 0.25, 0.5, 0.75, 1.0]
 lr_decay_multiplier_list = [0.95]
 neural_lr_start_list = [0.05]
 neural_lr_stop = 0.001
-neural_lr_rule_list = ["constant"]
+neural_lr_rule_list = ["divide_by_slow_loop_index"]
 neural_lr_decay_multiplier = 0.01
 neural_dynamic_iterations_nudged = 10
 neural_dynamic_iterations_free_list = [30]
-hopfield_g_list = [0.1]
+hopfield_g_list = [0.5]
 use_random_sign_beta = True
 use_three_phase_list = [False]
 
 n_epochs = 50
-seed_list = [10*j for j in range(3)]
+seed_list = [10*j for j in range(5)]
 
 setting_number = 0
-for lambda_, muForward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(lambda_list, muForward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
+for muForward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(muForward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
     setting_number += 1
-    lr_start = {'ff' : muForward_multiplier*np.array([0.08, 0.04]), 'fb': np.array([np.nan, 0.04])}
-    hyperparams_dict = {"muForward_multiplier": muForward_multiplier, "lr_start" : lr_start, 
+    lr_start = {'ff' : muForward_multiplier*np.array([1.0, 0.7]), 'fb': np.array([0.15, 0.15])}
+    hyperparams_dict = {"muForward_multiplier" : muForward_multiplier, "lr_start" : lr_start, 
                         "lr_decay_multiplier" : lr_decay_multiplier,
                         "neural_dynamic_iterations_free" : neural_dynamic_iterations_free,
                         "neural_dynamic_iterations_nudged" : neural_dynamic_iterations_nudged, 
@@ -105,7 +104,7 @@ for lambda_, muForward_multiplier, lr_decay_multiplier, neural_lr_start, neural_
                     rnd_sgn = 2*np.random.randint(2) - 1
                     beta = rnd_sgn*beta
                     
-                neurons = model.batch_step_hopfield(x, y_one_hot, hopfield_g, 
+                neurons = model.batch_step_hopfield( x, y_one_hot, hopfield_g, 
                                                     lr, neural_lr_start, neural_lr_stop, neural_lr_rule, 
                                                     neural_lr_decay_multiplier, neural_dynamic_iterations_free,
                                                     neural_dynamic_iterations_nudged, beta, 

@@ -30,7 +30,7 @@ os.chdir(working_path)
 if not os.path.exists("../Results"):
     os.mkdir("../Results")
 
-pickle_name_for_results = "simulation_results_CorInfoMax_CIFAR10_muForward_Ablation_V1.pkl"
+pickle_name_for_results = "simulation_results_CorInfoMax_CIFAR10_neural_lr_start_Ablation_V2.pkl"
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -54,9 +54,9 @@ beta = 1
 lambda_list = [0.99995]
 epsilon = 0.15
 one_over_epsilon = 1 / epsilon
-muForward_multiplier_list = [0.1, 0.25, 0.5, 0.75, 1.0]
+lr_start_list = [{'ff' : np.array([0.08, 0.04]), 'fb': np.array([np.nan, 0.04])}]
 lr_decay_multiplier_list = [0.95]
-neural_lr_start_list = [0.05]
+neural_lr_start_list = [0.015, 0.05, 0.075, 0.1, 0.15, 0.3]
 neural_lr_stop = 0.001
 neural_lr_rule_list = ["constant"]
 neural_lr_decay_multiplier = 0.01
@@ -67,14 +67,12 @@ use_random_sign_beta = True
 use_three_phase_list = [False]
 
 n_epochs = 50
-seed_list = [10*j for j in range(3)]
+seed_list = [10*j for j in range(5)]
 
 setting_number = 0
-for lambda_, muForward_multiplier, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(lambda_list, muForward_multiplier_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
+for lambda_, lr_start, lr_decay_multiplier, neural_lr_start, neural_lr_rule, neural_dynamic_iterations_free, hopfield_g, use_three_phase in product(lambda_list, lr_start_list, lr_decay_multiplier_list, neural_lr_start_list, neural_lr_rule_list, neural_dynamic_iterations_free_list, hopfield_g_list, use_three_phase_list):
     setting_number += 1
-    lr_start = {'ff' : muForward_multiplier*np.array([0.08, 0.04]), 'fb': np.array([np.nan, 0.04])}
-    hyperparams_dict = {"muForward_multiplier": muForward_multiplier, "lr_start" : lr_start, 
-                        "lr_decay_multiplier" : lr_decay_multiplier,
+    hyperparams_dict = {"lr_start" : lr_start, "lr_decay_multiplier" : lr_decay_multiplier,
                         "neural_dynamic_iterations_free" : neural_dynamic_iterations_free,
                         "neural_dynamic_iterations_nudged" : neural_dynamic_iterations_nudged, 
                         "neural_lr_rule" : neural_lr_rule, "neural_lr" : neural_lr_start, 
